@@ -1,0 +1,63 @@
+name: todo-lab
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: todo_db
+      POSTGRES_USER: todo_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD}
+    volumes:
+      - todo_pgdata:/var/lib/postgresql/data
+      - ${DB_INIT_DIR:-../database}:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U todo_user -d todo_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks: [internal]
+
+  backend:
+    image: ${IMAGE_NAMESPACE:?Falta IMAGE_NAMESPACE}-api:${IMAGE_TAG:?Falta IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/todo_db
+      SPRING_DATASOURCE_USERNAME: todo_user
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Falta JWT_SECRET}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  frontend:
+    image: ${IMAGE_NAMESPACE:?Falta IMAGE_NAMESPACE}-web:${IMAGE_TAG:?Falta IMAGE_TAG}
+    restart: unless-stopped
+    depends_on: [backend]
+    networks: [internal]
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      TODO_DOMAIN: ${TODO_DOMAIN:?Falta TODO_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [frontend]
+    networks: [internal]
+
+volumes:
+  todo_pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge
