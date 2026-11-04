@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as taskApi from '../../../api/taskApi'
 import { ApiError } from '../../../api/http'
-import { AuthContext } from '../../auth/context/AuthContext'
+import { AuthContext } from '../../auth/context/useAuth'
 import TasksPage from './TasksPage'
 
 vi.mock('../../../api/taskApi', () => ({
