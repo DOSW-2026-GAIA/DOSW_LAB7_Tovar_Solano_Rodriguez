@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as taskApi from '../../../api/taskApi'
-import { useAuth } from '../../auth/context/AuthContext'
+import { useAuth } from '../../auth/context/useAuth'
 
 export function useTasks() {
   const { token, expireSession } = useAuth()
   const [tasks, setTasks] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   const handleError = useCallback(
@@ -20,10 +20,10 @@ export function useTasks() {
   )
 
   const loadTasks = useCallback(async () => {
-    setLoading(true)
-    setError(null)
     try {
-      setTasks(await taskApi.getTasks(token))
+      const data = await taskApi.getTasks(token)
+      setTasks(data)
+      setError(null)
     } catch (err) {
       handleError(err)
     } finally {
@@ -68,8 +68,29 @@ export function useTasks() {
   )
 
   useEffect(() => {
-    loadTasks()
-  }, [loadTasks])
+    let active = true
+    taskApi
+      .getTasks(token)
+      .then((data) => {
+        if (active) {
+          setTasks(data)
+          setError(null)
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          handleError(err)
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [token, handleError])
 
   return { tasks, loading, error, loadTasks, addTask, editTask, removeTask }
 }
