@@ -1174,3 +1174,5 @@ Solo Caddy expone puertos hacia Internet (80 y 443). El frontend, el backend y l
 | Contenedores en ejecución | ![Compose ps](docs/ci-cd-evidencias/mariana-azure-07-compose-ps.png) |
 | Persistencia tras recrear contenedores | ![Persistencia](docs/ci-cd-evidencias/mariana-azure-09.png) |
 | Resultado 401 sin JWT | ![401 sin JWT](docs/ci-cd-evidencias/mariana-azure-08-401.png) |
+| Rollback a SHA anterior (db sin recrear) | ![Rollback](docs/ci-cd-evidencias/mariana-azure-10-rollback.png) |
+| Datos intactos tras el rollback | ![Datos tras rollback](docs/ci-cd-evidencias/mariana-azure-11-rollback-datos.png) |
