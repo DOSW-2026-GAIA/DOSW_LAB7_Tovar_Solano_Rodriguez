@@ -1173,3 +1173,4 @@ Solo Caddy expone puertos hacia Internet (80 y 443). El frontend, el backend y l
 | App por HTTPS con sesión iniciada | ![App HTTPS](docs/ci-cd-evidencias/mariana-azure-06-app-https.png) |
 | Contenedores en ejecución | ![Compose ps](docs/ci-cd-evidencias/mariana-azure-07-compose-ps.png) |
 | Persistencia tras recrear contenedores | ![Persistencia](docs/ci-cd-evidencias/mariana-azure-09.png) |
+| Resultado 401 sin JWT | ![401 sin JWT](docs/ci-cd-evidencias/mariana-azure-08-401.png) |
