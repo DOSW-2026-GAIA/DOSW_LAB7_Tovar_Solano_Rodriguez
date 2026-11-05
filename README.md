@@ -665,6 +665,176 @@ Recorrido realizado con PostgreSQL en Docker, la API en Spring Boot y el fronten
 
 **7. Pruebas automatizadas.** Ver la sección anterior: 89 pruebas en el back-end y 34 en el front-end.
 
+## Laboratorio CI/CD multinube
+
+La aplicación se valida con GitHub Actions, se empaqueta en dos imágenes que se publican en GitHub Container Registry (GHCR) y se despliega con Docker Compose en una VM de Azure y en una instancia EC2 de AWS Academy. Cada nube tiene su propio runner, sus propios secretos y su propia base de datos.
+
+### Diagrama de contenedores
+
+_Pendiente._
+
+### Diagrama de despliegue
+
+_Pendiente._
+
+### Flujo de integración y diferencias con el despliegue
+
+El repositorio tiene tres workflows. El de CI corre solo cuando hay cambios; los dos de CD se lanzan a mano y reutilizan el de CI como puerta de calidad.
+
+```mermaid
+flowchart LR
+    PR[Pull request o push a develop/main] --> BQ[backend-quality]
+    PR --> FQ[frontend-quality]
+    BQ --> D{¿push a main?}
+    FQ --> D
+    D -- sí --> PUB[publish-images: api y web con sha-COMMIT]
+    D -- no --> FIN[Termina sin publicar]
+    MAN[Run workflow manual] --> QG[quality-gate: reutiliza ci-quality.yml]
+    QG --> DEP[deploy en el runner de la nube]
+    PUB -. imágenes en GHCR .-> DEP
+```
+
+**Integración (`ci-quality.yml`)**
+
+- **Eventos:** `push` y `pull_request` hacia `main` y `develop`. También se puede llamar desde otro workflow (`workflow_call`).
+- **`backend-quality`:** levanta un PostgreSQL 17 de servicio y ejecuta `mvn clean verify`. Ese comando corre las pruebas, genera el reporte JaCoCo y falla si la cobertura de líneas baja del 80 % o si SpotBugs encuentra algo de prioridad media o mayor.
+- **`frontend-quality`:** ejecuta `npm ci`, `npm run lint` (ESLint), `npm run test:coverage` (Vitest con umbral del 80 % en líneas, funciones, ramas y sentencias) y `npm run build`.
+- **`publish-images`:** depende de los dos jobs anteriores (`needs`) y solo corre en un push a `main`. Construye los Dockerfiles multietapa y publica `-api` y `-web` con la etiqueta `sha-<commit>`.
+- **Reportes:** se suben como artifacts `backend-jacoco`, `backend-spotbugs` y `frontend-coverage`, incluso cuando el job falla.
+
+**Despliegue (`deploy-azure.yml` y `deploy-aws.yml`)**
+
+- **Evento:** solo `workflow_dispatch`. Nadie despliega por accidente con un push.
+- **`quality-gate`:** vuelve a correr las pruebas y el análisis antes de desplegar. Si falla, el despliegue no empieza.
+- **`deploy-*`:** solo corre desde `main` y en el runner con la etiqueta de su nube (`azure-todo` o `aws-todo`). Arma el `.env` con los secretos del environment (`azure-lab` o `aws-lab`), descarga las imágenes del SHA que se está desplegando y levanta el stack.
+- **Verificación al final:** el job espera a que `https://<dominio>/health` responda y comprueba que `/api/v1/tasks` sin token devuelva 401. Si alguna de las dos falla, el job queda en rojo.
+- **`concurrency`:** evita dos despliegues a la vez en la misma nube.
+
+En resumen, la integración decide si el código es aceptable y deja lista una versión, y el despliegue decide cuándo y dónde se instala esa versión.
+
+### Pipelines, comandos y archivos
+
+| Pipeline | Archivo | Cuándo corre | Dónde corre | Qué produce |
+| --- | --- | --- | --- | --- |
+| CI - calidad y contenedores | [.github/workflows/ci-quality.yml](.github/workflows/ci-quality.yml) | Push o PR a `main` y `develop` | `ubuntu-latest` (GitHub) | Pruebas, reportes y, en `main`, imágenes en GHCR |
+| CD - Azure VM | [.github/workflows/deploy-azure.yml](.github/workflows/deploy-azure.yml) | Manual, desde `main` | Self-hosted `azure-todo` | Stack en `~/todo-azure` de la VM |
+| CD - AWS Academy EC2 | [.github/workflows/deploy-aws.yml](.github/workflows/deploy-aws.yml) | Manual, desde `main` | Self-hosted `aws-todo` | Stack en `~/todo-aws` de la EC2 |
+
+| Comando local | Dónde | Qué valida |
+| --- | --- | --- |
+| `mvn clean verify` | `backend/` | Pruebas, JaCoCo (80 % de líneas) y SpotBugs |
+| `npm run lint` | `frontend/` | ESLint |
+| `npm run test:coverage` | `frontend/` | Vitest con umbral del 80 % |
+| `npm run build` | `frontend/` | Build de producción de Vite |
+
+| Archivo | Para qué sirve |
+| --- | --- |
+| [backend/Dockerfile](backend/Dockerfile), [frontend/Dockerfile](frontend/Dockerfile) | Imágenes multietapa del API y del front-end |
+| [frontend/nginx.conf](frontend/nginx.conf) | Sirve React y redirige `/api/` al backend |
+| [backend/spotbugs-exclude.xml](backend/spotbugs-exclude.xml) | Exclusiones justificadas de SpotBugs |
+| [infra/docker-compose.prod.yml](infra/docker-compose.prod.yml) | Stack: `db`, `backend`, `frontend` y `proxy` |
+| [infra/Caddyfile](infra/Caddyfile) | HTTPS automático para el dominio |
+| [infra/.env.example](infra/.env.example) | Variables que necesita el stack, sin valores reales |
+
+### Ejecutar la versión contenerizada en local
+
+Se necesita Docker Desktop encendido y los puertos 80 y 443 libres.
+
+1. Crear el archivo de variables a partir del ejemplo. Nunca se sube a Git; ya está en `.gitignore`.
+
+   ```powershell
+   Copy-Item infra/.env.example infra/.env
+   ```
+
+2. Editar `infra/.env`:
+   - `IMAGE_TAG`: `sha-` más el commit completo de `main` que tenga imágenes publicadas (aparece en el job `publish-images` o en *Packages*).
+   - `TODO_DOMAIN`: dejar `localhost`.
+   - `DB_PASSWORD` y `JWT_SECRET`: valores aleatorios. Se pueden generar con `openssl rand -base64 32`.
+
+3. Iniciar sesión en GHCR, porque los paquetes del repositorio son privados. Se usa un token personal con el permiso `read:packages`:
+
+   ```powershell
+   docker login ghcr.io -u <usuario-github>
+   ```
+
+   Si no se quiere usar GHCR, se pueden construir las imágenes en local y poner `IMAGE_TAG=sha-local` en el `.env`:
+
+   ```powershell
+   docker build -t ghcr.io/nataliart12/dosw_lab7_tovar_solano_rodriguez-api:sha-local backend
+   docker build -t ghcr.io/nataliart12/dosw_lab7_tovar_solano_rodriguez-web:sha-local frontend
+   ```
+
+4. Levantar el stack desde la raíz del repositorio:
+
+   ```powershell
+   docker compose --env-file infra/.env -f infra/docker-compose.prod.yml up -d
+   docker compose --env-file infra/.env -f infra/docker-compose.prod.yml ps
+   ```
+
+5. Abrir `https://localhost`. Caddy firma el certificado de `localhost` con su propia autoridad, así que el navegador muestra una advertencia la primera vez. Para probar desde la terminal:
+
+   ```powershell
+   curl.exe -k https://localhost/health
+   curl.exe -k -i https://localhost/api/v1/tasks
+   ```
+
+   La primera petición debe responder `ok` y la segunda `401`.
+
+6. Detener el stack sin perder las tareas:
+
+   ```powershell
+   docker compose --env-file infra/.env -f infra/docker-compose.prod.yml down
+   ```
+
+   No se usa `down -v`, porque borra el volumen `todo_pgdata` con toda la base de datos.
+
+El stack tiene su propio PostgreSQL y no choca con el contenedor `todo-postgres` del desarrollo local, porque no publica el puerto 5432.
+
+### Ejecutar los despliegues y revisar los logs
+
+**Antes del primer despliegue** (lo hace quien tenga rol de administrador en el repositorio):
+
+- En *Settings → Environments*, `azure-lab` debe tener los secretos `AZURE_DB_PASSWORD` y `AZURE_JWT_SECRET` y la variable `AZURE_DOMAIN`. `aws-lab` debe tener `AWS_DB_PASSWORD`, `AWS_JWT_SECRET` y `AWS_DOMAIN`.
+- En *Settings → Actions → Runners* deben aparecer `azure-todo` y `aws-todo` en estado *Idle*. Si un runner sale *Offline*, la VM está apagada o el servicio del runner se cayó.
+- Debe existir en GHCR la imagen del último commit de `main`.
+
+**Lanzar un despliegue** (cualquier integrante con permiso de escritura):
+
+1. Ir a *Actions* y elegir **CD - Azure VM** o **CD - AWS Academy EC2**.
+2. Clic en **Run workflow**, rama `main`, y otra vez **Run workflow**.
+3. Abrir la ejecución. Primero corren los jobs de `quality-gate` en GitHub y después el de despliegue en el runner de la nube.
+4. Cuando termine en verde, abrir `https://<IP>.sslip.io`.
+
+**Logs en GitHub.** Cada paso del job se puede abrir desde la ejecución. Si el despliegue falla, el error suele estar en el paso *Preparar configuración y desplegar*. En ese paso, un `curl: (35)` al principio es normal: es Caddy sacando el certificado, y el job lo reintenta.
+
+**Logs en la VM.** Se entra por SSH y se usa el directorio de despliegue (`~/todo-azure` o `~/todo-aws`):
+
+```bash
+cd ~/todo-azure
+docker compose --env-file .env -f docker-compose.prod.yml ps
+docker compose --env-file .env -f docker-compose.prod.yml logs --tail=100 backend
+docker compose --env-file .env -f docker-compose.prod.yml logs --tail=50 proxy
+grep '^IMAGE_TAG=' .env
+```
+
+El último comando muestra qué versión está desplegada sin imprimir los secretos.
+
+**Logs del runner:**
+
+```bash
+cd ~/actions-runner
+sudo ./svc.sh status
+journalctl -u "actions.runner.*" --since "1 hour ago"
+```
+
+### Comparación Azure y AWS
+
+_Pendiente._
+
+### Evidencias y video
+
+_Pendiente._
+
 ## Tecnologías
 
 | Capa | Tecnología |
