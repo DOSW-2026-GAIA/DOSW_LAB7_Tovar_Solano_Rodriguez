@@ -78,7 +78,7 @@ Usamos un Dockerfile multietapa para cada parte porque las herramientas que se n
 - **Primera etapa:** usa `node:22-alpine`. Instala las dependencias con `npm ci` y genera el build de Vite.
 - **Imagen final:** usa `nginx:alpine`. Solo tiene los archivos estáticos de `dist` y nuestro `nginx.conf`, que sirve la aplicación, responde `/health` y redirige `/api/` al contenedor `backend`. No lleva Node.js, `node_modules` ni el código fuente.
 
-Ninguna de las dos imágenes tiene secretos adentro. La contraseña de PostgreSQL y el secreto JWT se pasan como variables de entorno cuando arranca el contenedor. Así la misma imagen `sha-b0648b1…` sirvió en Azure y sirve en AWS, cada una con sus propios secretos.
+Ninguna de las dos imágenes tiene secretos adentro. La contraseña de PostgreSQL y el secreto JWT se pasan como variables de entorno cuando arranca el contenedor. Así la misma imagen `sha-b0648b1…` que se desplegó en Azure serviría en AWS sin reconstruirla, solo cambiando los secretos.
 
 ## 6. Imagen frente a contenedor y contenido de `todo_pgdata`
 

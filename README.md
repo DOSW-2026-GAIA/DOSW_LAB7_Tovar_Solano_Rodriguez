@@ -667,9 +667,9 @@ Recorrido realizado con PostgreSQL en Docker, la API en Spring Boot y el fronten
 
 ## Laboratorio CI/CD multinube
 
-La aplicación se valida con GitHub Actions, se empaqueta en dos imágenes que se publican en GitHub Container Registry (GHCR) y se despliega con Docker Compose en una VM de Azure y en una instancia EC2 de AWS Academy. Cada nube tiene su propio runner, sus propios secretos y su propia base de datos.
+La aplicación se valida con GitHub Actions, se empaqueta en dos imágenes que se publican en GitHub Container Registry (GHCR) y se despliega con Docker Compose. El laboratorio pide dos nubes, Azure y AWS Academy, cada una con su propio runner, sus propios secretos y su propia base de datos.
 
-El despliegue en Azure está funcionando en `https://158.158.73.237.sslip.io`. El de AWS no se alcanzó a ejecutar porque el curso de AWS Academy venció antes; los diagramas muestran la arquitectura que define `deploy-aws.yml`, que es la misma de Azure cambiando el runner, el environment y los secretos.
+**Solo se desplegó en Azure**, en `https://158.158.73.237.sslip.io`. El despliegue en AWS no se hizo: el curso de AWS Academy venció antes de que pudiéramos crear la EC2, así que no hay runner `aws-todo`, ni ejecución de `deploy-aws.yml`, ni evidencias de AWS. En los diagramas, la parte de AWS es la arquitectura planeada según `deploy-aws.yml`, que es igual a la de Azure cambiando el runner, el environment y los secretos.
 
 ### Diagrama de contenedores
 
@@ -694,7 +694,7 @@ flowchart TB
         end
     end
 
-    subgraph aws["AWS Academy · EC2 Ubuntu"]
+    subgraph aws["AWS Academy · EC2 Ubuntu (planeado, no desplegado)"]
         awsrunner["Runner self-hosted<br/>[etiqueta aws-todo]"]
         subgraph awsnet["Stack Docker Compose"]
             awsproxy["proxy<br/>[Caddy, HTTPS]"]
@@ -724,7 +724,7 @@ flowchart TB
     awsapi -->|"JDBC"| awsdb
 ```
 
-GitHub es común a las dos nubes: ahí viven el código, los workflows y las imágenes. Todo lo demás está duplicado en cada nube, y las dos bases de datos son independientes: una tarea creada en Azure no aparece en AWS.
+GitHub es común a las dos nubes: ahí viven el código, los workflows y las imágenes. Todo lo demás se repite en cada nube, y las bases de datos serían independientes: una tarea creada en Azure no aparecería en AWS.
 
 ### Diagrama de despliegue
 
@@ -750,7 +750,7 @@ flowchart LR
         azv[("Volumen todo_pgdata")]
     end
 
-    subgraph ec2["Nodo: EC2 AWS Academy · IP pública del Learner Lab"]
+    subgraph ec2["Nodo: EC2 AWS Academy (planeado, no desplegado)"]
         direction TB
         sg["Security Group · entrada 22, 80 y 443"]
         awr["Runner aws-todo<br/>servicio en ~/actions-runner"]
