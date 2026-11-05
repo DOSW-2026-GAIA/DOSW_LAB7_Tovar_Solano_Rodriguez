@@ -1,0 +1,4 @@
+{$TODO_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy frontend:80
+}
