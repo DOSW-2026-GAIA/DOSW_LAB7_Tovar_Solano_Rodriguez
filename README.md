@@ -1098,3 +1098,78 @@ Los datos se conservan en el volumen `todo-postgres-data`. Para eliminar tambié
 docker rm -f todo-postgres
 docker volume rm todo-postgres-data
 ```
+
+## Despliegue en Azure (Mariana Tovar)
+
+La aplicación se despliega en una VM de Azure con Docker Compose. El workflow `CD - Azure VM` corre en un runner propio con la etiqueta `azure-todo` y descarga las imágenes publicadas por CI en GHCR, sin reconstruirlas. Caddy publica la app por HTTPS en `https://158.158.73.237.sslip.io`.
+
+### C4 · Nivel 2 · Contenedores (Azure)
+
+```mermaid
+flowchart TB
+    user["Usuario<br/>[Persona]"]
+
+    subgraph gh["GitHub"]
+        actions["GitHub Actions<br/>[CI y CD Azure]"]
+        ghcr["GHCR<br/>[imágenes api y web con etiqueta sha-COMMIT]"]
+    end
+
+    subgraph az["Azure · VM Ubuntu"]
+        runner["Runner self-hosted<br/>[etiqueta azure-todo]"]
+        subgraph net["Red privada Docker: internal"]
+            proxy["Caddy<br/>[HTTPS, puertos 80 y 443]"]
+            web["Frontend<br/>[React + Nginx, puerto 80]"]
+            api["Backend<br/>[Spring Boot, puerto 8080]"]
+            db[("PostgreSQL 17<br/>[puerto 5432]")]
+        end
+        vol[("Volumen todo_pgdata")]
+    end
+
+    user -->|"HTTPS 443"| proxy
+    proxy --> web
+    web -->|"proxy /api/"| api
+    api -->|"JDBC"| db
+    db --- vol
+    actions -->|"publica imágenes"| ghcr
+    actions -->|"ejecuta el job de CD"| runner
+    ghcr -->|"pull de imágenes"| runner
+    runner -->|"docker compose up -d"| net
+```
+
+### Diagrama de despliegue (Azure)
+
+```mermaid
+flowchart LR
+    browser["Navegador del usuario"]
+
+    subgraph vm["Nodo: VM Azure vm-dosw-todo-azure · IP 158.158.73.237"]
+        direction TB
+        runner["Runner azure-todo"]
+        subgraph docker["Docker Engine · red privada internal"]
+            proxy["proxy · caddy:2-alpine<br/>puertos públicos 80 y 443"]
+            frontend["frontend · Nginx<br/>puerto interno 80"]
+            backend["backend · Spring Boot<br/>puerto interno 8080"]
+            db["db · postgres:17-alpine<br/>puerto interno 5432"]
+        end
+        vol[("Volumen Docker todo_pgdata")]
+    end
+
+    browser -->|"HTTPS 443"| proxy
+    proxy --> frontend
+    frontend -->|"/api/"| backend
+    backend --> db
+    db --- vol
+    runner -.->|"docker compose"| docker
+```
+
+Solo Caddy expone puertos hacia Internet (80 y 443). El frontend, el backend y la base de datos solo son accesibles dentro de la red privada de Docker.
+
+### Evidencias de Azure
+
+| Evidencia | Captura |
+|---|---|
+| Pipeline de despliegue en verde | ![Deploy verde](docs/ci-cd-evidencias/mariana-azure-02-deploy-verde.png) |
+| Docker instalado en la VM | ![Docker](docs/ci-cd-evidencias/mariana-azure-03-docker.png) |
+| App por HTTPS con sesión iniciada | ![App HTTPS](docs/ci-cd-evidencias/mariana-azure-06-app-https.png) |
+| Contenedores en ejecución | ![Compose ps](docs/ci-cd-evidencias/mariana-azure-07-compose-ps.png) |
+| Persistencia tras recrear contenedores | ![Persistencia](docs/ci-cd-evidencias/mariana-azure-09.png) |
