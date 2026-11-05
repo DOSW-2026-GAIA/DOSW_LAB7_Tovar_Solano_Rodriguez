@@ -2,21 +2,13 @@
 
 Laboratorio CI/CD multinube · App ToDo · DOSW 2026-2.
 
-Las respuestas se basan en evidencias reales de este repositorio, guardadas en `docs/ci-cd-evidencias/`. Cada integrante completa las preguntas que le corresponden:
-
-| Integrante | Preguntas |
-|---|---|
-| Natalia | 1, 2, 3, 4, 5 |
-| Mariana | 6, 9, 11, 13, 15 |
-| Paula | 7, 8, 10, 12, 14 |
+Las respuestas se basan en evidencias reales de este repositorio, guardadas en `docs/ci-cd-evidencias/`.
 
 **Video final:** pendiente de publicar. El enlace se agrega aquí y en el README cuando esté listo.
 
 ---
 
 ## 1. Integración continua, entrega continua y despliegue continuo
-
-*Responsable: Natalia.*
 
 La **integración continua** es que cada cambio que se sube se compile y se pruebe automáticamente. Así los errores aparecen en el momento en que alguien integra su código, y no semanas después. La **entrega continua** va un paso más allá: si el código pasa, queda empaquetado y listo para instalarse en cualquier momento, pero alguien decide cuándo. En el **despliegue continuo** no hay ese paso humano, y todo lo que pasa las pruebas llega solo a producción.
 
@@ -27,8 +19,6 @@ Nosotras implementamos integración continua y entrega continua, pero no desplie
 - **Sin despliegue continuo:** los workflows de Azure y AWS solo tienen `workflow_dispatch`. El primer despliegue a Azure (ejecución `41952727980`) lo lanzó a mano Mariana (`Marix201`) desde *Run workflow*. Lo elegimos así porque las VMs no están siempre encendidas y los créditos son limitados: con despliegue automático, cada merge a `main` dejaría un job esperando un runner apagado.
 
 ## 2. Por qué `publish-images` depende de las pruebas y del análisis estático
-
-*Responsable: Natalia.*
 
 En `ci-quality.yml`, el job `publish-images` tiene `needs: [backend-quality, frontend-quality]`. Si cualquiera de los dos falla, el job ni siquiera arranca y no se publica ninguna imagen.
 
@@ -43,8 +33,6 @@ Además, `publish-images` tiene la condición `github.event_name == 'push' && gi
 
 ## 3. Qué verifica JaCoCo y qué no permite concluir una cobertura del 100 %
 
-*Responsable: Natalia.*
-
 JaCoCo mide qué líneas y ramas del código se ejecutaron mientras corrían las pruebas. En el `pom.xml` lo configuramos con la regla `jacoco-check` sobre todo el proyecto (`BUNDLE`): si la cobertura de líneas baja de `0.80`, `mvn verify` falla y el pipeline queda en rojo. Excluimos `TodoApiApplication`, porque solo arranca Spring y no tiene lógica que probar.
 
 Con las 89 pruebas del backend llegamos a **91,5 % de líneas**. El reporte HTML queda en el artifact `backend-jacoco` de cada ejecución (`01-ci-pr-verde.png`).
@@ -57,8 +45,6 @@ Lo que JaCoCo no dice es si las pruebas comprueban lo correcto. Una línea cuent
 Por eso, incluso un 100 % no permite concluir que el código no tiene errores. Tampoco garantiza que funcione con datos reales, que la integración con PostgreSQL o con el frontend esté bien, ni que se hayan probado los casos límite que nadie pensó. Para eso están las pruebas de integración y los smoke tests del despliegue: comprobar `/health` y el 401 sin token.
 
 ## 4. ESLint y SpotBugs: hallazgos reales
-
-*Responsable: Natalia.*
 
 Las dos herramientas hacen análisis estático, es decir, revisan el código sin ejecutarlo. ESLint corre en `frontend-quality` con `npm run lint`. SpotBugs corre dentro de `mvn verify`, con `effort=Max` y `threshold=Medium`. En los dos casos, un hallazgo hace fallar el job y, por lo tanto, bloquea la publicación de imágenes.
 
@@ -80,8 +66,6 @@ No desactivamos ningún detector en general. Cada exclusión está limitada a la
 
 ## 5. Por qué dos Dockerfiles multietapa y qué queda en cada imagen final
 
-*Responsable: Natalia.*
-
 Usamos un Dockerfile multietapa para cada parte porque las herramientas que se necesitan para compilar no se necesitan para ejecutar. Si quedaran en la imagen final, esta sería más pesada, tardaría más en descargarse en cada VM y tendría más programas que pueden traer vulnerabilidades.
 
 **Backend (`backend/Dockerfile`)**
@@ -98,13 +82,9 @@ Ninguna de las dos imágenes tiene secretos adentro. La contraseña de PostgreSQ
 
 ## 6. Imagen frente a contenedor y contenido de `todo_pgdata`
 
-*Responsable: Mariana.*
-
 Pendiente.
 
 ## 7. Qué información identifica la etiqueta `sha-COMMIT` y por qué es preferible a `latest`
-
-*Responsable: Paula.*
 
 La etiqueta `sha-<COMMIT>` contiene el hash completo de 40 caracteres del commit de Git que disparó el pipeline. En `.github/workflows/ci-quality.yml` el job `publish-images` la construye como `sha-${GITHUB_SHA}` y la aplica a las dos imágenes, `-api` y `-web`. La primera versión publicada en GHCR para este repositorio quedó etiquetada como `sha-b0648b15b2066c8e6067966bef428e5bc585feb0`, que corresponde al commit `b0648b1` en `main` (merge de `develop` en `main`).
 
@@ -115,8 +95,6 @@ Es preferible a desplegar siempre `latest` por tres razones:
 - **Hace posible el rollback.** Volver atrás consiste en cambiar `IMAGE_TAG` en el `.env` de la máquina al SHA anterior y ejecutar `docker compose pull` y `up -d`. Con `latest` no habría una versión anterior a la cual volver.
 
 ## 8. Por qué React consume `/api/...` con un proxy y no `localhost:8080`
-
-*Responsable: Paula.*
 
 El código de React se ejecuta en el navegador de cada usuario, no en el servidor. Si el frontend llamara a `http://localhost:8080`, el navegador intentaría conectarse a la máquina del propio usuario, donde no existe ningún backend. Además, el puerto 8080 no se publica hacia afuera: en `infra/docker-compose.prod.yml` solo el servicio `proxy` expone los puertos 80 y 443, y el backend queda dentro de la red interna de Docker. Una llamada HTTP a otro origen desde una página servida por HTTPS también sería bloqueada por el navegador (contenido mixto) y exigiría configurar CORS.
 
@@ -129,25 +107,17 @@ El cambio quedó registrado en el commit `feat: call the api through relative /a
 
 ## 9. Cómo se protegieron los secretos JWT y de PostgreSQL
 
-*Responsable: Mariana.*
-
 Pendiente.
 
 ## 10. Qué cambió entre el despliegue en Azure y AWS y qué no cambió
-
-*Responsable: Paula.*
 
 Pendiente: se completa con los datos reales de los dos despliegues (evidencias `azure-*` y `aws-*`).
 
 ## 11. Pipeline verde con la aplicación fallando
 
-*Responsable: Mariana.*
-
 Pendiente.
 
 ## 12. Por qué las tareas creadas en Azure no aparecen en la base de datos de AWS
-
-*Responsable: Paula.*
 
 Cada nube ejecuta su propio stack de Docker Compose, con su propio contenedor de PostgreSQL y su propio volumen `todo_pgdata`, que es local a la máquina donde corre (la VM de Azure o la instancia EC2 de AWS). No existe replicación ni conexión entre las dos bases de datos. Una tarea se guarda en la base del entorno que atendió la petición, así que la creada en Azure no existe en AWS, ni al revés.
 
@@ -157,18 +127,12 @@ Evidencia: `aws-10-independencia.png` (se agrega cuando existan los dos desplieg
 
 ## 13. Fallo de la nueva imagen con el esquema ya modificado
 
-*Responsable: Mariana.*
-
 Pendiente.
 
 ## 14. Recursos que pueden seguir generando costo tras detener una VM
 
-*Responsable: Paula.*
-
 Pendiente: se completa con la revisión de costos real de cada nube (evidencias `azure-11-apagado.png` y `aws-11-apagado.png`).
 
 ## 15. Dificultad técnica real y cómo se diagnosticó
-
-*Responsable: Mariana.*
 
 Pendiente.

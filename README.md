@@ -669,13 +669,123 @@ Recorrido realizado con PostgreSQL en Docker, la API en Spring Boot y el fronten
 
 La aplicación se valida con GitHub Actions, se empaqueta en dos imágenes que se publican en GitHub Container Registry (GHCR) y se despliega con Docker Compose en una VM de Azure y en una instancia EC2 de AWS Academy. Cada nube tiene su propio runner, sus propios secretos y su propia base de datos.
 
+El despliegue en Azure está funcionando en `https://158.158.73.237.sslip.io`. El de AWS no se alcanzó a ejecutar porque el curso de AWS Academy venció antes; los diagramas muestran la arquitectura que define `deploy-aws.yml`, que es la misma de Azure cambiando el runner, el environment y los secretos.
+
 ### Diagrama de contenedores
 
-_Pendiente._
+```mermaid
+flowchart TB
+    dev["Integrante del equipo<br/>[Persona]"]
+    user["Usuario<br/>[Persona]"]
+
+    subgraph gh["GitHub"]
+        repo["Repositorio<br/>[código, Dockerfiles y workflows]"]
+        actions["GitHub Actions<br/>[ci-quality, deploy-azure, deploy-aws]"]
+        ghcr["GHCR<br/>[imágenes -api y -web con etiqueta sha-COMMIT]"]
+    end
+
+    subgraph az["Azure · VM Ubuntu"]
+        azrunner["Runner self-hosted<br/>[etiqueta azure-todo]"]
+        subgraph aznet["Stack Docker Compose"]
+            azproxy["proxy<br/>[Caddy, HTTPS]"]
+            azweb["frontend<br/>[React + Nginx]"]
+            azapi["backend<br/>[Spring Boot + JWT]"]
+            azdb[("db<br/>[PostgreSQL 17]")]
+        end
+    end
+
+    subgraph aws["AWS Academy · EC2 Ubuntu"]
+        awsrunner["Runner self-hosted<br/>[etiqueta aws-todo]"]
+        subgraph awsnet["Stack Docker Compose"]
+            awsproxy["proxy<br/>[Caddy, HTTPS]"]
+            awsweb["frontend<br/>[React + Nginx]"]
+            awsapi["backend<br/>[Spring Boot + JWT]"]
+            awsdb[("db<br/>[PostgreSQL 17]")]
+        end
+    end
+
+    dev -->|"push, PR o Run workflow"| repo
+    repo --> actions
+    actions -->|"publica en push a main"| ghcr
+    actions -->|"job de CD Azure"| azrunner
+    actions -->|"job de CD AWS"| awsrunner
+    ghcr -->|"pull por SHA"| azrunner
+    ghcr -->|"pull por SHA"| awsrunner
+    azrunner -->|"docker compose up -d"| aznet
+    awsrunner -->|"docker compose up -d"| awsnet
+
+    user -->|"HTTPS · IP-Azure.sslip.io"| azproxy
+    user -->|"HTTPS · IP-AWS.sslip.io"| awsproxy
+    azproxy --> azweb
+    azweb -->|"/api/"| azapi
+    azapi -->|"JDBC"| azdb
+    awsproxy --> awsweb
+    awsweb -->|"/api/"| awsapi
+    awsapi -->|"JDBC"| awsdb
+```
+
+GitHub es común a las dos nubes: ahí viven el código, los workflows y las imágenes. Todo lo demás está duplicado en cada nube, y las dos bases de datos son independientes: una tarea creada en Azure no aparece en AWS.
 
 ### Diagrama de despliegue
 
-_Pendiente._
+```mermaid
+flowchart LR
+    browser["Navegador del usuario"]
+
+    subgraph github["GitHub"]
+        actions["GitHub Actions"]
+        ghcr["GHCR"]
+    end
+
+    subgraph vm["Nodo: VM Azure · vm-dosw-todo-azure · 158.158.73.237"]
+        direction TB
+        nsg["NSG · entrada 22, 80 y 443"]
+        azr["Runner azure-todo<br/>servicio en ~/actions-runner"]
+        subgraph azdocker["Docker Engine · red privada internal"]
+            azp["proxy · caddy:2-alpine<br/>80 y 443 publicados"]
+            azf["frontend · nginx:alpine<br/>80 interno"]
+            azb["backend · eclipse-temurin:21-jre<br/>8080 interno"]
+            azd["db · postgres:17-alpine<br/>5432 interno"]
+        end
+        azv[("Volumen todo_pgdata")]
+    end
+
+    subgraph ec2["Nodo: EC2 AWS Academy · IP pública del Learner Lab"]
+        direction TB
+        sg["Security Group · entrada 22, 80 y 443"]
+        awr["Runner aws-todo<br/>servicio en ~/actions-runner"]
+        subgraph awsdocker["Docker Engine · red privada internal"]
+            awp["proxy · caddy:2-alpine<br/>80 y 443 publicados"]
+            awf["frontend · nginx:alpine<br/>80 interno"]
+            awb["backend · eclipse-temurin:21-jre<br/>8080 interno"]
+            awd["db · postgres:17-alpine<br/>5432 interno"]
+        end
+        awv[("Volumen todo_pgdata")]
+    end
+
+    browser -->|"HTTPS 443"| azp
+    browser -->|"HTTPS 443"| awp
+    azp --> azf
+    azf -->|"/api/"| azb
+    azb --> azd
+    azd --- azv
+    awp --> awf
+    awf -->|"/api/"| awb
+    awb --> awd
+    awd --- awv
+
+    azr -.->|"consulta jobs, salida 443"| actions
+    awr -.->|"consulta jobs, salida 443"| actions
+    azr -.->|"pull de imágenes"| ghcr
+    awr -.->|"pull de imágenes"| ghcr
+    azr -.->|"docker compose"| azdocker
+    awr -.->|"docker compose"| awsdocker
+```
+
+- **Puertos públicos:** solo Caddy expone puertos hacia Internet (80 y 443), y el firewall de cada nube (NSG en Azure, Security Group en AWS) solo deja entrar esos dos y el 22 para SSH.
+- **Red privada:** el frontend, el backend y la base de datos solo se ven entre ellos dentro de la red `internal` de Docker.
+- **Runners:** no reciben conexiones de entrada. Son ellos los que se conectan a GitHub para pedir trabajos, por eso no hace falta abrir ningún puerto para el CD.
+- **Persistencia:** cada nodo guarda sus datos en su propio volumen `todo_pgdata`, que sobrevive cuando se recrean los contenedores.
 
 ### Flujo de integración y diferencias con el despliegue
 
@@ -833,7 +943,33 @@ _Pendiente._
 
 ### Evidencias y video
 
-_Pendiente._
+Las capturas están en [docs/ci-cd-evidencias](docs/ci-cd-evidencias).
+
+**Integración continua**
+
+| Archivo | Evidencia |
+| --- | --- |
+| [01-ci-pr-verde.png](docs/ci-cd-evidencias/01-ci-pr-verde.png) | Jobs de Java y React en verde en un pull request |
+| [02-ci-fallo-controlado.png](docs/ci-cd-evidencias/02-ci-fallo-controlado.png), [03-ci-fallo-log.png](docs/ci-cd-evidencias/03-ci-fallo-log.png) | Pipeline en rojo por una prueba que falla a propósito, y su log |
+| [04-ci-corregido.png](docs/ci-cd-evidencias/04-ci-corregido.png) | Pipeline otra vez en verde después de corregir |
+| [05-ci-main-publicacion.png](docs/ci-cd-evidencias/05-ci-main-publicacion.png) | Push a `main` con el job `publish-images` |
+| [06-ghcr-api.png](docs/ci-cd-evidencias/06-ghcr-api.png), [07-ghcr-web.png](docs/ci-cd-evidencias/07-ghcr-web.png) | Imágenes `-api` y `-web` en GHCR con etiqueta SHA |
+
+**Despliegue en Azure**
+
+| Archivo | Evidencia |
+| --- | --- |
+| [azure-01-runner-idle.png](docs/ci-cd-evidencias/azure-01-runner-idle.png) | Runner `azure-todo-vm` registrado y en estado *Idle* |
+| [mariana-azure-03-docker.png](docs/ci-cd-evidencias/mariana-azure-03-docker.png) | Docker y Docker Compose instalados en la VM |
+| [mariana-azure-02-deploy-verde.png](docs/ci-cd-evidencias/mariana-azure-02-deploy-verde.png) | Workflow `CD - Azure VM` en verde |
+| [mariana-azure-06-app-https.png](docs/ci-cd-evidencias/mariana-azure-06-app-https.png) | App por HTTPS con sesión iniciada |
+| [mariana-azure-07-compose-ps.png](docs/ci-cd-evidencias/mariana-azure-07-compose-ps.png) | Los cuatro contenedores en ejecución |
+| [mariana-azure-08-401.png](docs/ci-cd-evidencias/mariana-azure-08-401.png) | `/api/v1/tasks` sin JWT responde 401 |
+| [mariana-azure-09.png](docs/ci-cd-evidencias/mariana-azure-09.png) | La tarea sigue existiendo después de recrear backend y frontend |
+
+**Despliegue en AWS:** no hay evidencias porque el curso de AWS Academy venció antes de poder desplegar.
+
+**Video:** _pendiente._
 
 ## Tecnologías
 
@@ -1098,79 +1234,3 @@ Los datos se conservan en el volumen `todo-postgres-data`. Para eliminar tambié
 docker rm -f todo-postgres
 docker volume rm todo-postgres-data
 ```
-
-## Despliegue en Azure (Mariana Tovar)
-
-La aplicación se despliega en una VM de Azure con Docker Compose. El workflow `CD - Azure VM` corre en un runner propio con la etiqueta `azure-todo` y descarga las imágenes publicadas por CI en GHCR, sin reconstruirlas. Caddy publica la app por HTTPS en `https://158.158.73.237.sslip.io`.
-
-### C4 · Nivel 2 · Contenedores (Azure)
-
-```mermaid
-flowchart TB
-    user["Usuario<br/>[Persona]"]
-
-    subgraph gh["GitHub"]
-        actions["GitHub Actions<br/>[CI y CD Azure]"]
-        ghcr["GHCR<br/>[imágenes api y web con etiqueta sha-COMMIT]"]
-    end
-
-    subgraph az["Azure · VM Ubuntu"]
-        runner["Runner self-hosted<br/>[etiqueta azure-todo]"]
-        subgraph net["Red privada Docker: internal"]
-            proxy["Caddy<br/>[HTTPS, puertos 80 y 443]"]
-            web["Frontend<br/>[React + Nginx, puerto 80]"]
-            api["Backend<br/>[Spring Boot, puerto 8080]"]
-            db[("PostgreSQL 17<br/>[puerto 5432]")]
-        end
-        vol[("Volumen todo_pgdata")]
-    end
-
-    user -->|"HTTPS 443"| proxy
-    proxy --> web
-    web -->|"proxy /api/"| api
-    api -->|"JDBC"| db
-    db --- vol
-    actions -->|"publica imágenes"| ghcr
-    actions -->|"ejecuta el job de CD"| runner
-    ghcr -->|"pull de imágenes"| runner
-    runner -->|"docker compose up -d"| net
-```
-
-### Diagrama de despliegue (Azure)
-
-```mermaid
-flowchart LR
-    browser["Navegador del usuario"]
-
-    subgraph vm["Nodo: VM Azure vm-dosw-todo-azure · IP 158.158.73.237"]
-        direction TB
-        runner["Runner azure-todo"]
-        subgraph docker["Docker Engine · red privada internal"]
-            proxy["proxy · caddy:2-alpine<br/>puertos públicos 80 y 443"]
-            frontend["frontend · Nginx<br/>puerto interno 80"]
-            backend["backend · Spring Boot<br/>puerto interno 8080"]
-            db["db · postgres:17-alpine<br/>puerto interno 5432"]
-        end
-        vol[("Volumen Docker todo_pgdata")]
-    end
-
-    browser -->|"HTTPS 443"| proxy
-    proxy --> frontend
-    frontend -->|"/api/"| backend
-    backend --> db
-    db --- vol
-    runner -.->|"docker compose"| docker
-```
-
-Solo Caddy expone puertos hacia Internet (80 y 443). El frontend, el backend y la base de datos solo son accesibles dentro de la red privada de Docker.
-
-### Evidencias de Azure
-
-| Evidencia | Captura |
-|---|---|
-| Pipeline de despliegue en verde | ![Deploy verde](docs/ci-cd-evidencias/mariana-azure-02-deploy-verde.png) |
-| Docker instalado en la VM | ![Docker](docs/ci-cd-evidencias/mariana-azure-03-docker.png) |
-| App por HTTPS con sesión iniciada | ![App HTTPS](docs/ci-cd-evidencias/mariana-azure-06-app-https.png) |
-| Contenedores en ejecución | ![Compose ps](docs/ci-cd-evidencias/mariana-azure-07-compose-ps.png) |
-| Persistencia tras recrear contenedores | ![Persistencia](docs/ci-cd-evidencias/mariana-azure-09.png) |
-| Resultado 401 sin JWT | ![401 sin JWT](docs/ci-cd-evidencias/mariana-azure-08-401.png) |
