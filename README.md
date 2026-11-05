@@ -2,8 +2,8 @@
 
 # ToDo Full Stack
 
-Laboratorio 7 · Seguridad
-Escuela Colombiana de Ingeniería Julio Garavito
+Laboratorio 7 · Seguridad  
+Escuela Colombiana de Ingeniería Julio Garavito  
 Docente: Rodrigo Gualtero
 
 Aplicación web para gestionar tareas personales. Permite crear, consultar, editar, cambiar de estado y eliminar tareas desde una interfaz en React que consume una API REST en Spring Boot, con persistencia en PostgreSQL ejecutado en Docker.
@@ -21,7 +21,7 @@ Aplicación web para gestionar tareas personales. Permite crear, consultar, edit
 | Nombre | Link |
 |---|---|
 | Mariana Tovar Cardozo | https://github.com/Marix201/DOSW_Lab7_Tovar.git |
-| Paula Andrea Solano Morales |https://github.com/AndreaSolano23/DOSW_Lab6_Solano.git |
+| Paula Andrea Solano Morales | https://github.com/AndreaSolano23/DOSW_Lab6_Solano.git |
 | Natalia Andrea Rodríguez Torres | https://github.com/nataliaRT12/DOSW_LAB6_Rodriguez/tree/main |
 
 **Laboratorio de seguridad (JWT)**
@@ -574,7 +574,7 @@ npm test
 ```
 
 | Tipo | Clases | Pruebas |
-| --- | --- | --- |
+|---|---|---|
 | Unitarias (Mockito) | `AuthServiceTest`, `TaskServiceTest`, `AdminServiceTest`, `TokenServiceTest`, `CategoryServiceTest` | 34 |
 | Controladores con Spring Security (MockMvc) | `AuthControllerTest`, `TaskControllerTest`, `UserControllerTest`, `AdminControllerTest`, `CategoryControllerTest` | 33 |
 | Repositorio (JPA) | `TaskRepositoryTest` | 5 |
@@ -586,7 +586,7 @@ Total: 89 pruebas en el back-end y 34 en el front-end.
 #### Matriz de pruebas
 
 | ID | Prueba | Resultado esperado | Dónde se verifica |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | PT-01 | Registrar usuario válido | `201`, rol `USER` | `SecurityIntegrationTest.pt01_pt03…`, `AuthControllerTest`, `AuthServiceTest` |
 | PT-02 | Correo duplicado | `409`, sin duplicados | `SecurityIntegrationTest.pt02…`, `AuthControllerTest`, `AuthServiceTest` |
 | PT-03 | Guardar contraseña | Hash BCrypt, no texto plano | `SecurityIntegrationTest.pt01_pt03…`, `AuthServiceTest` |
@@ -611,7 +611,7 @@ Total: 89 pruebas en el back-end y 34 en el front-end.
 Reporte en `backend/target/site/jacoco/index.html` después de `mvn clean verify`.
 
 | Métrica | Cobertura |
-| --- | --- |
+|---|---|
 | Instrucciones | 95,3 % |
 | Ramas | 87,5 % |
 | Líneas | 91,5 % |
@@ -939,7 +939,32 @@ journalctl -u "actions.runner.*" --since "1 hour ago"
 
 ### Comparación Azure y AWS
 
-_Pendiente._
+La arquitectura contempla ejecutar el mismo stack en Azure y AWS Academy mediante `infra/docker-compose.prod.yml`, que incluye PostgreSQL, API, frontend y Caddy. La propuesta utiliza las mismas imágenes de GHCR etiquetadas por SHA. La diferencia está en la máquina que alojaría el despliegue y en la configuración propia de cada entorno.
+
+La siguiente tabla describe la arquitectura planeada. No representa evidencia de que ambos despliegues se hayan ejecutado.
+
+| Aspecto | Azure | AWS Academy |
+|---|---|---|
+| Dónde se planea ejecutar Docker Compose | Máquina virtual de Azure | Instancia EC2 |
+| Runner de GitHub planeado | `azure-todo` | `aws-todo` |
+| Workflow previsto | `deploy-azure.yml` | `deploy-aws.yml` |
+| Environment previsto | `azure-lab` | `aws-lab` |
+| Secretos previstos | `AZURE_DB_PASSWORD`, `AZURE_JWT_SECRET` | `AWS_DB_PASSWORD`, `AWS_JWT_SECRET` |
+| Variable de dominio prevista | `AZURE_DOMAIN` | `AWS_DOMAIN` |
+| Carpeta de despliegue prevista | `~/todo-azure` | `~/todo-aws` |
+| Tamaño de máquina previsto | Standard_B2s (2 vCPU, 4 GiB) | t3.medium (2 vCPU, 4 GiB) |
+| Usuario SSH previsto | `azureuser` | `ubuntu` |
+| Almacenamiento de PostgreSQL previsto | Volumen Docker local a la VM | Volumen Docker local a la EC2 |
+
+**Qué se planea mantener igual:** el código, las dos imágenes (`-api` y `-web`) con su etiqueta SHA, el compose, el Caddyfile, los scripts SQL de `database/`, la verificación posterior al despliegue (`/health` con 200 y `/api/v1/tasks` sin token con 401) y las reglas de seguridad (solo 80 y 443 abiertos al público, nunca 5432 ni 8080).
+
+**Justificación de la arquitectura:**
+
+- **Máquinas virtuales con Docker Compose:** permiten entender el despliegue de punta a punta usando las mismas piezas en cualquier nube.
+- **Runners self-hosted:** permiten ejecutar el despliegue directamente en el servidor sin necesitar credenciales adicionales de la nube.
+- **Imágenes inmutables por SHA en GHCR:** permiten que ambas nubes utilicen la misma versión verificada por CI y facilitan volver a una versión anterior.
+- **Bases de datos independientes:** cada despliegue tendría su propio volumen y sus propios secretos.
+- **Caddy con HTTPS automático:** permite utilizar un dominio `IP.sslip.io` sin depender de un dominio propio.
 
 ### Evidencias y video
 
@@ -976,7 +1001,7 @@ Las capturas están en [docs/ci-cd-evidencias](docs/ci-cd-evidencias).
 ## Tecnologías
 
 | Capa | Tecnología |
-| --- | --- |
+|---|---|
 | Front-end | React + Vite, Vitest, React Testing Library |
 | Back-end | Java 21, Spring Boot 4, Maven, Spring Data JPA, Bean Validation |
 | Seguridad | Spring Security, OAuth2 Resource Server (JWT con Nimbus, HS256), BCrypt |
@@ -994,9 +1019,9 @@ SecurityFilterChain (valida el JWT)
         │
         ▼
 REST Controller  →  Service  →  Repository  →  Entity JPA
-                                                    │
-                                                    ▼
-                                              PostgreSQL (Docker)
+                                                   │
+                                                   ▼
+                                             PostgreSQL (Docker)
 ```
 
 - **Seguridad:** `SecurityConfig` define las rutas públicas, el rol `ADMIN` y la validación del JWT; `TokenService` emite los tokens y `SecurityErrorHandler` responde 401/403 en JSON.
@@ -1044,7 +1069,7 @@ El diagrama entidad-relación está en la sección [Diagramas de la solución](#
 **Usuario (`users`)**
 
 | Campo | Tipo | Obligatorio | Valor por defecto |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | `id` | Long | Sí | Generado |
 | `name` | String (máx. 100) | Sí | |
 | `email` | String (máx. 255, único, en minúsculas) | Sí | |
@@ -1055,7 +1080,7 @@ El diagrama entidad-relación está en la sección [Diagramas de la solución](#
 **Tarea (`tasks`)**
 
 | Campo | Tipo | Obligatorio | Valor por defecto |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | `id` | Long | Sí | Generado |
 | `title` | String (máx. 120) | Sí | |
 | `description` | String (máx. 500) | No | |
@@ -1111,7 +1136,7 @@ mvn spring-boot:run
 La API queda disponible en `http://localhost:8080`.
 
 | Variable | Obligatoria | Uso | Valor por defecto |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | `JWT_SECRET` | Sí | Llave HMAC para firmar y validar los JWT (mínimo 32 bytes) | Ninguno: sin ella la aplicación no arranca |
 | `DB_URL` | No | URL JDBC de PostgreSQL | `jdbc:postgresql://localhost:5432/todo_db` |
 | `DB_USER` | No | Usuario de la base de datos | `todo_user` |
@@ -1155,6 +1180,7 @@ Ejemplo de error:
 ```
 { "status": 404, "message": "Task with id 99 was not found" }
 ```
+
 ## Requisito anterior · Categorías
 
 Las historias de usuario del requisito de categorías se encuentran en Jira: https://parcialdosw.atlassian.net/jira/software/projects/AE/boards/70/timeline?atlOrigin=eyJpIjoiODRkZmJhZTYxMjU3NDM0N2JhYTI3YmQwYzFjOWJkYTgiLCJwIjoiaiJ9
@@ -1194,7 +1220,7 @@ Los comandos, la matriz PT-01 a PT-18 y la cobertura están en [Pruebas de segur
 Las capturas del laboratorio de seguridad están en [docs/evidence/security](docs/evidence/security).
 
 | Archivo | Evidencia |
-| --- | --- |
+|---|---|
 | `00-estado-inicial-crud.png`, `00-api-sin-token.png` | Estado inicial: CRUD sin autenticación |
 | `01-migracion-003.png` | Migración `003` aplicada sin perder tareas |
 | `02-react-login.png` | Pantalla de inicio de sesión |
@@ -1211,7 +1237,7 @@ Las capturas del laboratorio de seguridad están en [docs/evidence/security](doc
 Las capturas del laboratorio anterior están en [docs/evidence](docs/evidence):
 
 | N.º | Evidencia |
-| --- | --- |
+|---|---|
 | 01 | PostgreSQL en Docker |
 | 02 | Tabla `tasks` |
 | 03 | Pruebas del Service |
@@ -1235,4 +1261,4 @@ Los datos se conservan en el volumen `todo-postgres-data`. Para eliminar tambié
 ```
 docker rm -f todo-postgres
 docker volume rm todo-postgres-data
-```
+
