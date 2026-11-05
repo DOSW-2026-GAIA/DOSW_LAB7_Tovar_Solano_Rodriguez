@@ -966,6 +966,8 @@ Las capturas están en [docs/ci-cd-evidencias](docs/ci-cd-evidencias).
 | [mariana-azure-07-compose-ps.png](docs/ci-cd-evidencias/mariana-azure-07-compose-ps.png) | Los cuatro contenedores en ejecución |
 | [mariana-azure-08-401.png](docs/ci-cd-evidencias/mariana-azure-08-401.png) | `/api/v1/tasks` sin JWT responde 401 |
 | [mariana-azure-09.png](docs/ci-cd-evidencias/mariana-azure-09.png) | La tarea sigue existiendo después de recrear backend y frontend |
+| [mariana-azure-10-rollback.png](docs/ci-cd-evidencias/mariana-azure-10-rollback.png) | Rollback a un SHA anterior sin recrear la base de datos |
+| [mariana-azure-11-rollback-datos.png](docs/ci-cd-evidencias/mariana-azure-11-rollback-datos.png) | La tarea sigue existiendo después del rollback |
 
 **Despliegue en AWS:** no hay evidencias porque el curso de AWS Academy venció antes de poder desplegar.
 
