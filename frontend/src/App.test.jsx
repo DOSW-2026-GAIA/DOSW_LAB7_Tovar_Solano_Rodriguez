@@ -119,4 +119,23 @@ describe('App', () => {
     expect(screen.getByText('Luis Gomez')).toBeInTheDocument()
     expect(screen.queryByText('Ana 1')).not.toBeInTheDocument()
   })
+
+  it('registers a new account and signs in automatically', async () => {
+    const user = userEvent.setup()
+    authApi.register.mockResolvedValue({ id: 1, name: 'Ana Perez', email: 'ana@example.com', role: 'USER' })
+    renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+    await user.type(screen.getByLabelText('Name'), 'Ana Perez')
+    await user.type(screen.getByLabelText('Email'), 'ana@example.com')
+    await user.type(screen.getByLabelText('Password'), 'ContrasenaDemo123!')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+
+    expect(await screen.findByText('Ana 1')).toBeInTheDocument()
+    expect(authApi.register).toHaveBeenCalledWith({
+      name: 'Ana Perez',
+      email: 'ana@example.com',
+      password: 'ContrasenaDemo123!',
+    })
+  })
 })

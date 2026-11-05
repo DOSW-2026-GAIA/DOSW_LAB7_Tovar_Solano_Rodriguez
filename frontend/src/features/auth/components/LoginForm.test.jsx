@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../../../api/http'
-import { AuthContext } from '../context/AuthContext'
+import { AuthContext } from '../context/useAuth'
 import LoginForm from './LoginForm'
 
 function renderForm(auth) {

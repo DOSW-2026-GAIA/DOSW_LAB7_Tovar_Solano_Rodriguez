@@ -1,0 +1,91 @@
+name: CD - AWS Academy EC2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy-aws-todo
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    name: Revalidar calidad antes del despliegue
+    uses: ./.github/workflows/ci-quality.yml
+    permissions:
+      contents: read
+      packages: write
+
+  deploy-aws:
+    name: Desplegar contenedores en EC2
+    if: github.ref == 'refs/heads/main'
+    needs: quality-gate
+    runs-on: [self-hosted, linux, x64, aws-todo]
+    environment: aws-lab
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar configuración y desplegar
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DB_PASSWORD: ${{ secrets.AWS_DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.AWS_JWT_SECRET }}
+          TODO_DOMAIN: ${{ vars.AWS_DOMAIN }}
+        run: |
+          set -euo pipefail
+          : "${DB_PASSWORD:?Configurar AWS_DB_PASSWORD}"
+          : "${JWT_SECRET:?Configurar AWS_JWT_SECRET}"
+          : "${TODO_DOMAIN:?Configurar variable AWS_DOMAIN}"
+          export IMAGE_NAMESPACE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          export IMAGE_TAG="sha-${GITHUB_SHA}"
+
+          DEPLOY_DIR="$HOME/todo-aws"
+          mkdir -p "$DEPLOY_DIR/db"
+          cp infra/docker-compose.prod.yml "$DEPLOY_DIR/docker-compose.prod.yml"
+          cp infra/Caddyfile "$DEPLOY_DIR/Caddyfile"
+          cp database/0*.sql "$DEPLOY_DIR/db/"
+
+          umask 077
+          {
+            printf 'IMAGE_NAMESPACE=%s\n' "$IMAGE_NAMESPACE"
+            printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
+            printf 'TODO_DOMAIN=%s\n' "$TODO_DOMAIN"
+            printf 'DB_PASSWORD=%s\n' "$DB_PASSWORD"
+            printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
+            printf 'DB_INIT_DIR=%s\n' "./db"
+          } > "$DEPLOY_DIR/.env"
+
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker compose --env-file "$DEPLOY_DIR/.env" -f "$DEPLOY_DIR/docker-compose.prod.yml" config --quiet
+          docker compose --env-file "$DEPLOY_DIR/.env" -f "$DEPLOY_DIR/docker-compose.prod.yml" pull
+          docker compose --env-file "$DEPLOY_DIR/.env" -f "$DEPLOY_DIR/docker-compose.prod.yml" up -d --remove-orphans
+          docker logout ghcr.io
+
+          echo "Verificando HTTPS y estado de la aplicación..."
+          ok=0
+          for attempt in $(seq 1 36); do
+            if curl --fail --silent --show-error "https://${TODO_DOMAIN}/health" >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          test "$ok" -eq 1 || { echo 'Error: /health no respondió correctamente'; exit 1; }
+
+          code=000
+          for attempt in $(seq 1 24); do
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' "https://${TODO_DOMAIN}/api/v1/tasks" || true)
+            if [ "$code" = "401" ]; then
+              break
+            fi
+            sleep 5
+          done
+          if [ "$code" != "401" ]; then
+            echo "API sin token devolvió HTTP $code (se esperaba 401). Revisar Spring Security."
+            exit 1
+          fi
+          echo "AWS Academy: despliegue, HTTPS y protección básica verificados"
