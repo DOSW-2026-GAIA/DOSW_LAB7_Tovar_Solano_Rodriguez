@@ -98,64 +98,52 @@ Es preferible a desplegar siempre `latest` por tres razones:
 - **Permite desplegar lo mismo en varias nubes.** Azure y AWS descargan exactamente las mismas imágenes que el CI ya verificó con pruebas, cobertura y análisis estático.
 - **Hace posible el rollback.** Volver atrás consiste en cambiar `IMAGE_TAG` en el `.env` de la máquina al SHA anterior y ejecutar `docker compose pull` y `up -d`. Con `latest` no habría una versión anterior a la cual volver.
 
-## 8. Por qué React consume `/api/...` con un proxy y no `localhost:8080`
+## 7. ¿Por qué se utilizan etiquetas SHA para las imágenes Docker?
 
-El código de React se ejecuta en el navegador de cada usuario, no en el servidor. Si el frontend llamara a `http://localhost:8080`, el navegador intentaría conectarse a la máquina del propio usuario, donde no existe ningún backend. Además, el puerto 8080 no se publica hacia afuera: en `infra/docker-compose.prod.yml` solo el servicio `proxy` expone los puertos 80 y 443, y el backend queda dentro de la red interna de Docker. Una llamada HTTP a otro origen desde una página servida por HTTPS también sería bloqueada por el navegador (contenido mixto) y exigiría configurar CORS.
+Se utilizan etiquetas SHA porque permiten identificar exactamente la versión del código con la que se construyó una imagen Docker. A diferencia de etiquetas como `latest`, que pueden apuntar a versiones diferentes con el tiempo, una etiqueta SHA permite relacionar la imagen con un commit específico del repositorio.
 
-Por eso el frontend usa rutas relativas (`/api/v1/...`), en el mismo origen de la página:
+En este laboratorio, la primera imagen publicada en GHCR utilizó la etiqueta `sha-b0648b15b2066c8e6067966bef428e5bc585feb0`. Para el despliegue actual en AWS se utilizaron las imágenes correspondientes al commit `0affafa5fb5c0c6611624d1e0bab73fb843db4c7`.
 
-- **En desarrollo**, el proxy de Vite (`server.proxy` en `frontend/vite.config.js`) redirige `/api` a `http://localhost:8080`.
-- **En producción**, el Nginx del contenedor `frontend` (`frontend/nginx.conf`, bloque `location /api/`) reenvía las peticiones a `backend:8080` por la red interna, y Caddy publica todo por HTTPS en el dominio del despliegue.
+Esto facilita identificar qué versión está desplegada, mantener la trazabilidad entre el código y las imágenes y recuperar una versión anterior si se presenta algún problema.
 
-El cambio quedó registrado en el commit `feat: call the api through relative /api paths with a vite dev proxy`.
+## 8. ¿Por qué se utilizan rutas relativas para las peticiones del frontend?
 
-## 9. Cómo se protegieron los secretos JWT y de PostgreSQL
+El frontend utiliza rutas relativas como `/api` para realizar las peticiones al backend, en lugar de tener escrita directamente la dirección IP o el dominio de una nube.
 
-Los secretos no están en el repositorio ni dentro de las imágenes. En Azure se guardan como **secrets del environment `azure-lab`** (`AZURE_DB_PASSWORD` y `AZURE_JWT_SECRET`). El dominio, que no es secreto, es una variable (`AZURE_DOMAIN`). El job `deploy-azure` los recibe como variables de entorno, comprueba que existan y escribe en la VM el archivo `~/todo-azure/.env` con `umask 077`, de modo que solo lo puede leer `azureuser`. El `docker-compose.prod.yml` solo referencia `${DB_PASSWORD}` y `${JWT_SECRET}` y falla si faltan, y en el repositorio solo hay un `.env.example` con valores de relleno. Para bajar imágenes de GHCR el workflow usa el `GITHUB_TOKEN` temporal de la ejecución y hace `docker logout` al terminar. El job `quality-gate` se invoca sin pasarle ningún secreto. En las operaciones manuales también evitamos exponerlos: mostramos la versión con `grep '^IMAGE_TAG=' .env` y no el archivo entero, y la copia de respaldo `~/env.backup.azure` quedó con permisos `600` (`mariana-azure-10-rollback.png`).
+Esto permite que la misma imagen del frontend funcione tanto en Azure como en AWS sin tener que modificar el código para cada despliegue. El proxy inverso se encarga de recibir las peticiones y dirigir las que comienzan por `/api` hacia el backend correspondiente.
 
-Dar acceso a Docker al runner tiene un costo. Quien puede ejecutar Docker equivale a administrador de la VM, porque puede montar el disco del host en un contenedor. Además, el runner ejecuta el código de los workflows del repositorio: quien pudiera modificar un workflow y lanzarlo podría leer `.env`, la base de datos y las credenciales de la máquina. Lo limitamos con el disparo manual (`workflow_dispatch`), la condición `github.ref == 'refs/heads/main'` en el job de despliegue y la etiqueta específica `azure-todo`. Como mejoras, se podrían exigir revisores en el environment `azure-lab`, no aceptar pull requests de forks en runners propios y rotar los secretos si se sospecha una filtración.
+De esta manera, se facilita el despliegue en diferentes entornos y se evita depender de una dirección específica dentro del código del frontend.
 
-## 10. Qué cambió entre el despliegue en Azure y AWS y qué no cambió
+## 10. ¿Qué diferencias y similitudes existen entre los despliegues en Azure y AWS?
 
-Pendiente: se completa con los datos reales de los dos despliegues (evidencias `azure-*` y `aws-*`).
+Los dos despliegues utilizan la misma aplicación ToDo y las imágenes Docker publicadas en GitHub Container Registry (GHCR). En ambos casos se utiliza Docker Compose para levantar los servicios de la aplicación, incluyendo el frontend, backend y base de datos.
 
-## 11. Pipeline verde con la aplicación fallando
+La principal diferencia está en la infraestructura utilizada. Azure y AWS tienen máquinas virtuales independientes, con sus propias configuraciones, variables de entorno y bases de datos. También tienen dominios diferentes:
 
-Es lo que nos pasó en Azure: el pipeline y el CD terminaron en verde (`mariana-azure-02-deploy-verde.png`), pero el login desde el navegador devolvía 403. Los controles del CD solo comprueban que `/health` responda 200 y que `/api/v1/tasks` sin token responda 401. Los dos pasaron porque ninguno ejercita un inicio de sesión real con la cabecera `Origin`, que es lo que envía un navegador. Un pipeline en verde solo significa que se cumplió lo que se probó.
+- Azure: https://158.158.73.237.sslip.io/
+- AWS: https://34.229.78.194.sslip.io/
 
-Controles que añadiríamos:
+En AWS se utilizó una instancia EC2 con Ubuntu y Docker Compose. Para este despliegue, las imágenes utilizadas corresponden al commit `0affafa5fb5c0c6611624d1e0bab73fb843db4c7`.
 
-- **Smoke test funcional al final del CD:** registrar o iniciar sesión con un usuario de prueba enviando `Origin: https://${TODO_DOMAIN}`, usar el token para crear y leer una tarea, y fallar el job si alguna respuesta no es la esperada.
-- **Verificación de versión:** comprobar que el `IMAGE_TAG` desplegado coincide con el SHA del commit.
-- **Revisión de logs:** inspeccionar los logs del backend tras arrancar, para detectar reinicios en bucle o errores de conexión.
-- **Rollback listo:** si el smoke test falla, volver al SHA anterior, procedimiento que demostramos en `mariana-azure-10-rollback.png`.
+Aunque ambos entornos comparten el código y el proceso de construcción de las imágenes, funcionan de manera independiente. Por eso, un problema en la infraestructura o base de datos de una nube no afecta directamente a la otra.
 
-## 12. Por qué las tareas creadas en Azure no aparecen en la base de datos de AWS
+## 12. ¿Cómo se garantiza la independencia entre las bases de datos de Azure y AWS?
 
-Cada nube ejecuta su propio stack de Docker Compose, con su propio contenedor de PostgreSQL y su propio volumen `todo_pgdata`, que es local a la máquina donde corre (la VM de Azure o la instancia EC2 de AWS). No existe replicación ni conexión entre las dos bases de datos. Una tarea se guarda en la base del entorno que atendió la petición, así que la creada en Azure no existe en AWS, ni al revés.
+Cada nube tiene su propia máquina virtual, su propio servicio PostgreSQL y su propio volumen de Docker para almacenar los datos. Esto significa que los datos creados en Azure no se replican automáticamente en AWS, ni al contrario.
 
-Lo único compartido es el código: las dos nubes descargan las mismas imágenes inmutables, identificadas por SHA, desde GHCR. Los datos y los secretos son independientes: cada environment de GitHub (`azure-lab` y `aws-lab`) tiene su propio `DB_PASSWORD` y su propio `JWT_SECRET`, por lo que además un token emitido en una nube no es válido en la otra.
+En ambos despliegues se utilizan las mismas imágenes de la aplicación, pero cada entorno tiene su propia configuración y sus propios secretos, como las credenciales de la base de datos y la clave JWT.
 
-Evidencia: `aws-10-independencia.png` (se agrega cuando existan los dos despliegues).
+Por lo tanto, aunque las dos nubes ejecutan la misma aplicación, sus bases de datos funcionan de forma independiente. Si una de las máquinas virtuales se detiene o presenta un problema, la información almacenada en la otra nube no se ve afectada.
 
-## 13. Fallo de la nueva imagen con el esquema ya modificado
+**Evidencias:** `aws-10-independenciaAzure.png` y `aws-10-independenciaAWS.png`.
 
-Revertir la imagen no revierte la base de datos, y lo comprobamos: en el rollback de Azure solo se recrearon el backend y el frontend, y la base de datos siguió intacta con la tarea guardada (`mariana-azure-10-rollback.png` y `mariana-azure-11-rollback-datos.png`). Eso funciona porque las dos versiones eran compatibles con el mismo esquema. No lo sería si la versión nueva hubiera cambiado las tablas de forma incompatible.
+## 14. ¿Qué sucede con los costos al finalizar el laboratorio?
 
-En nuestro despliegue el backend corre con `SPRING_JPA_HIBERNATE_DDL_AUTO: validate`, así que no modifica el esquema por sí solo. Además, los scripts de `database/` se ejecutan únicamente cuando el volumen está vacío. Un cambio de esquema en producción sería una acción manual separada, y una imagen antigua contra un esquema nuevo podría fallar al arrancar, por ejemplo si faltan columnas que espera o si hay columnas obligatorias que no rellena.
+En AWS Academy, al revisar el estado del laboratorio, el indicador mostraba un consumo de **$0 de los $50 disponibles**. Esto indica que no se había registrado consumo del crédito asignado en ese momento.
 
-Nuestro plan sería este:
+Para Azure no se cuenta con una medición de costos confirmada, por lo que no se realiza una comparación de valores entre ambas nubes.
 
-1. **Antes de desplegar:** respaldar la base con `pg_dump`.
-2. **Cambios compatibles hacia atrás:** añadir columnas o tablas nuevas sin borrar ni renombrar las existentes, y eliminar lo viejo en una versión posterior.
-3. **Migraciones versionadas:** usar una herramienta como Flyway o Liquibase, porque los scripts de inicio no se repiten.
-4. **Si la versión nueva falla y el cambio era aditivo:** basta con volver al SHA anterior, como hicimos.
-5. **Si el cambio era destructivo:** restaurar el respaldo en un volumen nuevo y después volver a la imagen anterior.
-
-## 14. Recursos que pueden seguir generando costo tras detener una VM
-
-Pendiente: se completa con la revisión de costos real de cada nube (evidencias `azure-11-apagado.png` y `aws-11-apagado.png`).
-
+Es importante apagar o detener los recursos que no se estén utilizando al finalizar el laboratorio, ya que algunos servicios, como los discos o las direcciones IP públicas, pueden seguir generando costos dependiendo de su configuración.
 ## 15. Dificultad técnica real y cómo se diagnosticó
 
 La dificultad principal fue un **403 al iniciar sesión desde el navegador** con el pipeline y el despliegue en verde. Lo diagnosticamos por descarte con `curl`:

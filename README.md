@@ -669,7 +669,7 @@ Recorrido realizado con PostgreSQL en Docker, la API en Spring Boot y el fronten
 
 La aplicación se valida con GitHub Actions, se empaqueta en dos imágenes que se publican en GitHub Container Registry (GHCR) y se despliega con Docker Compose en una VM de Azure y en una instancia EC2 de AWS Academy. Cada nube tiene su propio runner, sus propios secretos y su propia base de datos.
 
-El despliegue en Azure está funcionando en `https://158.158.73.237.sslip.io`. El de AWS no se alcanzó a ejecutar porque el curso de AWS Academy venció antes; los diagramas muestran la arquitectura que define `deploy-aws.yml`, que es la misma de Azure cambiando el runner, el environment y los secretos.
+El despliegue en Azure está funcionando en `https://158.158.73.237.sslip.io` y el de AWS Academy en `https://34.229.78.194.sslip.io`. En ambos casos se ejecuta la misma aplicación mediante Docker Compose, utilizando las imágenes publicadas en GHCR. Cada nube tiene su propio runner, sus secretos y su base de datos, por lo que los despliegues funcionan de manera independiente.
 
 ### Diagrama de contenedores
 
@@ -715,7 +715,7 @@ flowchart TB
     awsrunner -->|"docker compose up -d"| awsnet
 
     user -->|"HTTPS · IP-Azure.sslip.io"| azproxy
-    user -->|"HTTPS · IP-AWS.sslip.io"| awsproxy
+    user -->|"HTTPS · 34.229.78.194.sslip.io"| awsproxy
     azproxy --> azweb
     azweb -->|"/api/"| azapi
     azapi -->|"JDBC"| azdb
@@ -750,7 +750,7 @@ flowchart LR
         azv[("Volumen todo_pgdata")]
     end
 
-    subgraph ec2["Nodo: EC2 AWS Academy · IP pública del Learner Lab"]
+    subgraph ec2["Nodo: EC2 AWS Academy · 34.229.78.194"]
         direction TB
         sg["Security Group · entrada 22, 80 y 443"]
         awr["Runner aws-todo<br/>servicio en ~/actions-runner"]
@@ -939,32 +939,22 @@ journalctl -u "actions.runner.*" --since "1 hour ago"
 
 ### Comparación Azure y AWS
 
-La arquitectura contempla ejecutar el mismo stack en Azure y AWS Academy mediante `infra/docker-compose.prod.yml`, que incluye PostgreSQL, API, frontend y Caddy. La propuesta utiliza las mismas imágenes de GHCR etiquetadas por SHA. La diferencia está en la máquina que alojaría el despliegue y en la configuración propia de cada entorno.
-
-La siguiente tabla describe la arquitectura planeada. No representa evidencia de que ambos despliegues se hayan ejecutado.
+Los dos despliegues se ejecutaron correctamente. Ambos utilizan la misma aplicación, las imágenes de GHCR y la configuración de Docker Compose, pero cada uno funciona en una máquina virtual independiente.
 
 | Aspecto | Azure | AWS Academy |
 |---|---|---|
-| Dónde se planea ejecutar Docker Compose | Máquina virtual de Azure | Instancia EC2 |
-| Runner de GitHub planeado | `azure-todo` | `aws-todo` |
-| Workflow previsto | `deploy-azure.yml` | `deploy-aws.yml` |
-| Environment previsto | `azure-lab` | `aws-lab` |
-| Secretos previstos | `AZURE_DB_PASSWORD`, `AZURE_JWT_SECRET` | `AWS_DB_PASSWORD`, `AWS_JWT_SECRET` |
-| Variable de dominio prevista | `AZURE_DOMAIN` | `AWS_DOMAIN` |
-| Carpeta de despliegue prevista | `~/todo-azure` | `~/todo-aws` |
-| Tamaño de máquina previsto | Standard_B2s (2 vCPU, 4 GiB) | t3.medium (2 vCPU, 4 GiB) |
-| Usuario SSH previsto | `azureuser` | `ubuntu` |
-| Almacenamiento de PostgreSQL previsto | Volumen Docker local a la VM | Volumen Docker local a la EC2 |
+| Infraestructura | Máquina virtual de Azure | Instancia EC2 |
+| Dirección HTTPS | `https://158.158.73.237.sslip.io` | `https://34.229.78.194.sslip.io` |
+| Runner | `azure-todo` | `aws-todo` |
+| Workflow | `deploy-azure.yml` | `deploy-aws.yml` |
+| Environment | `azure-lab` | `aws-lab` |
+| Secretos | `AZURE_DB_PASSWORD`, `AZURE_JWT_SECRET` | `AWS_DB_PASSWORD`, `AWS_JWT_SECRET` |
+| Variable de dominio | `AZURE_DOMAIN` | `AWS_DOMAIN` |
+| Carpeta de despliegue | `~/todo-azure` | `~/todo-aws` |
+| Usuario SSH | `azureuser` | `ubuntu` |
+| Base de datos | PostgreSQL independiente | PostgreSQL independiente |
 
-**Qué se planea mantener igual:** el código, las dos imágenes (`-api` y `-web`) con su etiqueta SHA, el compose, el Caddyfile, los scripts SQL de `database/`, la verificación posterior al despliegue (`/health` con 200 y `/api/v1/tasks` sin token con 401) y las reglas de seguridad (solo 80 y 443 abiertos al público, nunca 5432 ni 8080).
-
-**Justificación de la arquitectura:**
-
-- **Máquinas virtuales con Docker Compose:** permiten entender el despliegue de punta a punta usando las mismas piezas en cualquier nube.
-- **Runners self-hosted:** permiten ejecutar el despliegue directamente en el servidor sin necesitar credenciales adicionales de la nube.
-- **Imágenes inmutables por SHA en GHCR:** permiten que ambas nubes utilicen la misma versión verificada por CI y facilitan volver a una versión anterior.
-- **Bases de datos independientes:** cada despliegue tendría su propio volumen y sus propios secretos.
-- **Caddy con HTTPS automático:** permite utilizar un dominio `IP.sslip.io` sin depender de un dominio propio.
+Los dos despliegues utilizan imágenes identificadas por SHA. La versión desplegada en AWS corresponde al commit `0affafa5fb5c0c6611624d1e0bab73fb843db4c7`.
 
 ### Evidencias y video
 
@@ -994,9 +984,26 @@ Las capturas están en [docs/ci-cd-evidencias](docs/ci-cd-evidencias).
 | [mariana-azure-10-rollback.png](docs/ci-cd-evidencias/mariana-azure-10-rollback.png) | Rollback a un SHA anterior sin recrear la base de datos |
 | [mariana-azure-11-rollback-datos.png](docs/ci-cd-evidencias/mariana-azure-11-rollback-datos.png) | La tarea sigue existiendo después del rollback |
 
-**Despliegue en AWS:** no hay evidencias porque el curso de AWS Academy venció antes de poder desplegar.
+**Despliegue en AWS**
 
-**Video:** _pendiente._
+**Despliegue en AWS**
+
+| **Archivo** | **Evidencia** |
+|---|---|
+| [aws-01-ec2.png](docs/ci-cd-evidencias/aws-01-ec2.png) | Instancia EC2 creada y en ejecución |
+| [aws-02-security-group.png](docs/ci-cd-evidencias/aws-02-security-group.png) | Reglas de entrada del Security Group |
+| [aws-03-docker.png](docs/ci-cd-evidencias/aws-03-docker.png) | Docker y Docker Compose instalados |
+| [aws-04-runner.png](docs/ci-cd-evidencias/aws-04-runner.png) | Runner de AWS registrado |
+| [aws-05-pipeline.png](docs/ci-cd-evidencias/aws-05-pipeline.png) | Workflow de despliegue de AWS en verde |
+| [aws-06-app-https.png](docs/ci-cd-evidencias/aws-06-app-https.png) | Aplicación funcionando por HTTPS |
+| [aws-07-compose-ps.png](docs/ci-cd-evidencias/aws-07-compose-ps.png) | Los cuatro contenedores en ejecución |
+| [aws-08-401.png](docs/ci-cd-evidencias/aws-08-401.png) | API protegida: petición sin token responde 401 |
+| [aws-09-persistencia.png](docs/ci-cd-evidencias/aws-09-persistencia.png) | Persistencia de los datos después de recrear contenedores |
+| [aws-10-independenciaAzure.png](docs/ci-cd-evidencias/aws-10-independenciaAzure.png) | Datos de Azure independientes de AWS |
+| [aws-10-independenciaAWS.png](docs/ci-cd-evidencias/aws-10-independenciaAWS.png) | Datos propios de la instancia AWS |
+| [aws-11-apagado.png](docs/ci-cd-evidencias/aws-11-apagado.png) | Evidencia del estado de apagado de los recursos |
+
+**Video de sustentación:** [Ver video del laboratorio CI/CD multinube](https://canva.link/cuagq03o4ziytnc)
 
 ## Tecnologías
 
@@ -1059,7 +1066,9 @@ DOSW_LAB7_Tovar_Solano_Rodriguez/
 └── docs/
     ├── evidence/           Capturas de evidencia (security/ para este laboratorio)
     ├── informe-laboratorio.md
-    └── informe-seguridad-jwt.md
+    └── informe-seguridad-jwt.
+    └── informe-cicd.md
+    
 ```
 
 ## Modelo de datos
