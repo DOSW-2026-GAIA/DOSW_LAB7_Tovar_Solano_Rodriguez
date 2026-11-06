@@ -986,20 +986,22 @@ Las capturas están en [docs/ci-cd-evidencias](docs/ci-cd-evidencias).
 
 **Despliegue en AWS**
 
-| Archivo | Evidencia |
+**Despliegue en AWS**
+
+| **Archivo** | **Evidencia** |
 |---|---|
-| `aws-01-ec2.png` | Instancia EC2 creada y en ejecución |
-| `aws-02-security-group.png` | Reglas de entrada del Security Group |
-| `aws-03-docker.png` | Docker y Docker Compose instalados |
-| `aws-04-runner.png` | Runner `aws-todo` registrado |
-| `aws-05-pipeline.png` | Workflow de despliegue de AWS en verde |
-| `aws-06-app-https.png` | Aplicación funcionando por HTTPS |
-| `aws-07-compose-ps.png` | Los cuatro contenedores en ejecución |
-| `aws-08-401.png` | API protegida: petición sin token responde 401 |
-| `aws-09-persistencia.png` | Persistencia de los datos después de recrear contenedores |
-| `aws-10-independenciaAzure.png` | Datos de Azure independientes de AWS |
-| `aws-10-independenciaAWS.png` | Datos propios de la instancia AWS |
-| `aws-11-apagado.png` | Evidencia del estado de apagado de los recursos |
+| [aws-01-ec2.png](docs/ci-cd-evidencias/aws-01-ec2.png) | Instancia EC2 creada y en ejecución |
+| [aws-02-security-group.png](docs/ci-cd-evidencias/aws-02-security-group.png) | Reglas de entrada del Security Group |
+| [aws-03-docker.png](docs/ci-cd-evidencias/aws-03-docker.png) | Docker y Docker Compose instalados |
+| [aws-04-runner.png](docs/ci-cd-evidencias/aws-04-runner.png) | Runner de AWS registrado |
+| [aws-05-pipeline.png](docs/ci-cd-evidencias/aws-05-pipeline.png) | Workflow de despliegue de AWS en verde |
+| [aws-06-app-https.png](docs/ci-cd-evidencias/aws-06-app-https.png) | Aplicación funcionando por HTTPS |
+| [aws-07-compose-ps.png](docs/ci-cd-evidencias/aws-07-compose-ps.png) | Los cuatro contenedores en ejecución |
+| [aws-08-401.png](docs/ci-cd-evidencias/aws-08-401.png) | API protegida: petición sin token responde 401 |
+| [aws-09-persistencia.png](docs/ci-cd-evidencias/aws-09-persistencia.png) | Persistencia de los datos después de recrear contenedores |
+| [aws-10-independenciaAzure.png](docs/ci-cd-evidencias/aws-10-independenciaAzure.png) | Datos de Azure independientes de AWS |
+| [aws-10-independenciaAWS.png](docs/ci-cd-evidencias/aws-10-independenciaAWS.png) | Datos propios de la instancia AWS |
+| [aws-11-apagado.png](docs/ci-cd-evidencias/aws-11-apagado.png) | Evidencia del estado de apagado de los recursos |
 
 **Video de sustentación:** [Ver video del laboratorio CI/CD multinube](https://canva.link/cuagq03o4ziytnc)
 
