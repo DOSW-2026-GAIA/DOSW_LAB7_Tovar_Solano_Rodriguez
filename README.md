@@ -2,8 +2,8 @@
 
 # ToDo Full Stack
 
-Laboratorio 7 · Seguridad
-Escuela Colombiana de Ingeniería Julio Garavito
+Laboratorio 7 · Seguridad  
+Escuela Colombiana de Ingeniería Julio Garavito  
 Docente: Rodrigo Gualtero
 
 Aplicación web para gestionar tareas personales. Permite crear, consultar, editar, cambiar de estado y eliminar tareas desde una interfaz en React que consume una API REST en Spring Boot, con persistencia en PostgreSQL ejecutado en Docker.
@@ -21,7 +21,7 @@ Aplicación web para gestionar tareas personales. Permite crear, consultar, edit
 | Nombre | Link |
 |---|---|
 | Mariana Tovar Cardozo | https://github.com/Marix201/DOSW_Lab7_Tovar.git |
-| Paula Andrea Solano Morales |https://github.com/AndreaSolano23/DOSW_Lab6_Solano.git |
+| Paula Andrea Solano Morales | https://github.com/AndreaSolano23/DOSW_Lab6_Solano.git |
 | Natalia Andrea Rodríguez Torres | https://github.com/nataliaRT12/DOSW_LAB6_Rodriguez/tree/main |
 
 **Laboratorio de seguridad (JWT)**
@@ -574,7 +574,7 @@ npm test
 ```
 
 | Tipo | Clases | Pruebas |
-| --- | --- | --- |
+|---|---|---|
 | Unitarias (Mockito) | `AuthServiceTest`, `TaskServiceTest`, `AdminServiceTest`, `TokenServiceTest`, `CategoryServiceTest` | 34 |
 | Controladores con Spring Security (MockMvc) | `AuthControllerTest`, `TaskControllerTest`, `UserControllerTest`, `AdminControllerTest`, `CategoryControllerTest` | 33 |
 | Repositorio (JPA) | `TaskRepositoryTest` | 5 |
@@ -586,7 +586,7 @@ Total: 89 pruebas en el back-end y 34 en el front-end.
 #### Matriz de pruebas
 
 | ID | Prueba | Resultado esperado | Dónde se verifica |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | PT-01 | Registrar usuario válido | `201`, rol `USER` | `SecurityIntegrationTest.pt01_pt03…`, `AuthControllerTest`, `AuthServiceTest` |
 | PT-02 | Correo duplicado | `409`, sin duplicados | `SecurityIntegrationTest.pt02…`, `AuthControllerTest`, `AuthServiceTest` |
 | PT-03 | Guardar contraseña | Hash BCrypt, no texto plano | `SecurityIntegrationTest.pt01_pt03…`, `AuthServiceTest` |
@@ -611,7 +611,7 @@ Total: 89 pruebas en el back-end y 34 en el front-end.
 Reporte en `backend/target/site/jacoco/index.html` después de `mvn clean verify`.
 
 | Métrica | Cobertura |
-| --- | --- |
+|---|---|
 | Instrucciones | 95,3 % |
 | Ramas | 87,5 % |
 | Líneas | 91,5 % |
@@ -665,10 +665,343 @@ Recorrido realizado con PostgreSQL en Docker, la API en Spring Boot y el fronten
 
 **7. Pruebas automatizadas.** Ver la sección anterior: 89 pruebas en el back-end y 34 en el front-end.
 
+## Laboratorio CI/CD multinube
+
+La aplicación se valida con GitHub Actions, se empaqueta en dos imágenes que se publican en GitHub Container Registry (GHCR) y se despliega con Docker Compose en una VM de Azure y en una instancia EC2 de AWS Academy. Cada nube tiene su propio runner, sus propios secretos y su propia base de datos.
+
+El despliegue en Azure está funcionando en `https://158.158.73.237.sslip.io`. El de AWS no se alcanzó a ejecutar porque el curso de AWS Academy venció antes; los diagramas muestran la arquitectura que define `deploy-aws.yml`, que es la misma de Azure cambiando el runner, el environment y los secretos.
+
+### Diagrama de contenedores
+
+```mermaid
+flowchart TB
+    dev["Integrante del equipo<br/>[Persona]"]
+    user["Usuario<br/>[Persona]"]
+
+    subgraph gh["GitHub"]
+        repo["Repositorio<br/>[código, Dockerfiles y workflows]"]
+        actions["GitHub Actions<br/>[ci-quality, deploy-azure, deploy-aws]"]
+        ghcr["GHCR<br/>[imágenes -api y -web con etiqueta sha-COMMIT]"]
+    end
+
+    subgraph az["Azure · VM Ubuntu"]
+        azrunner["Runner self-hosted<br/>[etiqueta azure-todo]"]
+        subgraph aznet["Stack Docker Compose"]
+            azproxy["proxy<br/>[Caddy, HTTPS]"]
+            azweb["frontend<br/>[React + Nginx]"]
+            azapi["backend<br/>[Spring Boot + JWT]"]
+            azdb[("db<br/>[PostgreSQL 17]")]
+        end
+    end
+
+    subgraph aws["AWS Academy · EC2 Ubuntu"]
+        awsrunner["Runner self-hosted<br/>[etiqueta aws-todo]"]
+        subgraph awsnet["Stack Docker Compose"]
+            awsproxy["proxy<br/>[Caddy, HTTPS]"]
+            awsweb["frontend<br/>[React + Nginx]"]
+            awsapi["backend<br/>[Spring Boot + JWT]"]
+            awsdb[("db<br/>[PostgreSQL 17]")]
+        end
+    end
+
+    dev -->|"push, PR o Run workflow"| repo
+    repo --> actions
+    actions -->|"publica en push a main"| ghcr
+    actions -->|"job de CD Azure"| azrunner
+    actions -->|"job de CD AWS"| awsrunner
+    ghcr -->|"pull por SHA"| azrunner
+    ghcr -->|"pull por SHA"| awsrunner
+    azrunner -->|"docker compose up -d"| aznet
+    awsrunner -->|"docker compose up -d"| awsnet
+
+    user -->|"HTTPS · IP-Azure.sslip.io"| azproxy
+    user -->|"HTTPS · IP-AWS.sslip.io"| awsproxy
+    azproxy --> azweb
+    azweb -->|"/api/"| azapi
+    azapi -->|"JDBC"| azdb
+    awsproxy --> awsweb
+    awsweb -->|"/api/"| awsapi
+    awsapi -->|"JDBC"| awsdb
+```
+
+GitHub es común a las dos nubes: ahí viven el código, los workflows y las imágenes. Todo lo demás está duplicado en cada nube, y las dos bases de datos son independientes: una tarea creada en Azure no aparece en AWS.
+
+### Diagrama de despliegue
+
+```mermaid
+flowchart LR
+    browser["Navegador del usuario"]
+
+    subgraph github["GitHub"]
+        actions["GitHub Actions"]
+        ghcr["GHCR"]
+    end
+
+    subgraph vm["Nodo: VM Azure · vm-dosw-todo-azure · 158.158.73.237"]
+        direction TB
+        nsg["NSG · entrada 22, 80 y 443"]
+        azr["Runner azure-todo<br/>servicio en ~/actions-runner"]
+        subgraph azdocker["Docker Engine · red privada internal"]
+            azp["proxy · caddy:2-alpine<br/>80 y 443 publicados"]
+            azf["frontend · nginx:alpine<br/>80 interno"]
+            azb["backend · eclipse-temurin:21-jre<br/>8080 interno"]
+            azd["db · postgres:17-alpine<br/>5432 interno"]
+        end
+        azv[("Volumen todo_pgdata")]
+    end
+
+    subgraph ec2["Nodo: EC2 AWS Academy · IP pública del Learner Lab"]
+        direction TB
+        sg["Security Group · entrada 22, 80 y 443"]
+        awr["Runner aws-todo<br/>servicio en ~/actions-runner"]
+        subgraph awsdocker["Docker Engine · red privada internal"]
+            awp["proxy · caddy:2-alpine<br/>80 y 443 publicados"]
+            awf["frontend · nginx:alpine<br/>80 interno"]
+            awb["backend · eclipse-temurin:21-jre<br/>8080 interno"]
+            awd["db · postgres:17-alpine<br/>5432 interno"]
+        end
+        awv[("Volumen todo_pgdata")]
+    end
+
+    browser -->|"HTTPS 443"| azp
+    browser -->|"HTTPS 443"| awp
+    azp --> azf
+    azf -->|"/api/"| azb
+    azb --> azd
+    azd --- azv
+    awp --> awf
+    awf -->|"/api/"| awb
+    awb --> awd
+    awd --- awv
+
+    azr -.->|"consulta jobs, salida 443"| actions
+    awr -.->|"consulta jobs, salida 443"| actions
+    azr -.->|"pull de imágenes"| ghcr
+    awr -.->|"pull de imágenes"| ghcr
+    azr -.->|"docker compose"| azdocker
+    awr -.->|"docker compose"| awsdocker
+```
+
+- **Puertos públicos:** solo Caddy expone puertos hacia Internet (80 y 443), y el firewall de cada nube (NSG en Azure, Security Group en AWS) solo deja entrar esos dos y el 22 para SSH.
+- **Red privada:** el frontend, el backend y la base de datos solo se ven entre ellos dentro de la red `internal` de Docker.
+- **Runners:** no reciben conexiones de entrada. Son ellos los que se conectan a GitHub para pedir trabajos, por eso no hace falta abrir ningún puerto para el CD.
+- **Persistencia:** cada nodo guarda sus datos en su propio volumen `todo_pgdata`, que sobrevive cuando se recrean los contenedores.
+
+### Flujo de integración y diferencias con el despliegue
+
+El repositorio tiene tres workflows. El de CI corre solo cuando hay cambios; los dos de CD se lanzan a mano y reutilizan el de CI como puerta de calidad.
+
+```mermaid
+flowchart LR
+    PR[Pull request o push a develop/main] --> BQ[backend-quality]
+    PR --> FQ[frontend-quality]
+    BQ --> D{¿push a main?}
+    FQ --> D
+    D -- sí --> PUB[publish-images: api y web con sha-COMMIT]
+    D -- no --> FIN[Termina sin publicar]
+    MAN[Run workflow manual] --> QG[quality-gate: reutiliza ci-quality.yml]
+    QG --> DEP[deploy en el runner de la nube]
+    PUB -. imágenes en GHCR .-> DEP
+```
+
+**Integración (`ci-quality.yml`)**
+
+- **Eventos:** `push` y `pull_request` hacia `main` y `develop`. También se puede llamar desde otro workflow (`workflow_call`).
+- **`backend-quality`:** levanta un PostgreSQL 17 de servicio y ejecuta `mvn clean verify`. Ese comando corre las pruebas, genera el reporte JaCoCo y falla si la cobertura de líneas baja del 80 % o si SpotBugs encuentra algo de prioridad media o mayor.
+- **`frontend-quality`:** ejecuta `npm ci`, `npm run lint` (ESLint), `npm run test:coverage` (Vitest con umbral del 80 % en líneas, funciones, ramas y sentencias) y `npm run build`.
+- **`publish-images`:** depende de los dos jobs anteriores (`needs`) y solo corre en un push a `main`. Construye los Dockerfiles multietapa y publica `-api` y `-web` con la etiqueta `sha-<commit>`.
+- **Reportes:** se suben como artifacts `backend-jacoco`, `backend-spotbugs` y `frontend-coverage`, incluso cuando el job falla.
+
+**Despliegue (`deploy-azure.yml` y `deploy-aws.yml`)**
+
+- **Evento:** solo `workflow_dispatch`. Nadie despliega por accidente con un push.
+- **`quality-gate`:** vuelve a correr las pruebas y el análisis antes de desplegar. Si falla, el despliegue no empieza.
+- **`deploy-*`:** solo corre desde `main` y en el runner con la etiqueta de su nube (`azure-todo` o `aws-todo`). Arma el `.env` con los secretos del environment (`azure-lab` o `aws-lab`), descarga las imágenes del SHA que se está desplegando y levanta el stack.
+- **Verificación al final:** el job espera a que `https://<dominio>/health` responda y comprueba que `/api/v1/tasks` sin token devuelva 401. Si alguna de las dos falla, el job queda en rojo.
+- **`concurrency`:** evita dos despliegues a la vez en la misma nube.
+
+En resumen, la integración decide si el código es aceptable y deja lista una versión, y el despliegue decide cuándo y dónde se instala esa versión.
+
+### Pipelines, comandos y archivos
+
+| Pipeline | Archivo | Cuándo corre | Dónde corre | Qué produce |
+| --- | --- | --- | --- | --- |
+| CI - calidad y contenedores | [.github/workflows/ci-quality.yml](.github/workflows/ci-quality.yml) | Push o PR a `main` y `develop` | `ubuntu-latest` (GitHub) | Pruebas, reportes y, en `main`, imágenes en GHCR |
+| CD - Azure VM | [.github/workflows/deploy-azure.yml](.github/workflows/deploy-azure.yml) | Manual, desde `main` | Self-hosted `azure-todo` | Stack en `~/todo-azure` de la VM |
+| CD - AWS Academy EC2 | [.github/workflows/deploy-aws.yml](.github/workflows/deploy-aws.yml) | Manual, desde `main` | Self-hosted `aws-todo` | Stack en `~/todo-aws` de la EC2 |
+
+| Comando local | Dónde | Qué valida |
+| --- | --- | --- |
+| `mvn clean verify` | `backend/` | Pruebas, JaCoCo (80 % de líneas) y SpotBugs |
+| `npm run lint` | `frontend/` | ESLint |
+| `npm run test:coverage` | `frontend/` | Vitest con umbral del 80 % |
+| `npm run build` | `frontend/` | Build de producción de Vite |
+
+| Archivo | Para qué sirve |
+| --- | --- |
+| [backend/Dockerfile](backend/Dockerfile), [frontend/Dockerfile](frontend/Dockerfile) | Imágenes multietapa del API y del front-end |
+| [frontend/nginx.conf](frontend/nginx.conf) | Sirve React y redirige `/api/` al backend |
+| [backend/spotbugs-exclude.xml](backend/spotbugs-exclude.xml) | Exclusiones justificadas de SpotBugs |
+| [infra/docker-compose.prod.yml](infra/docker-compose.prod.yml) | Stack: `db`, `backend`, `frontend` y `proxy` |
+| [infra/Caddyfile](infra/Caddyfile) | HTTPS automático para el dominio |
+| [infra/.env.example](infra/.env.example) | Variables que necesita el stack, sin valores reales |
+
+### Ejecutar la versión contenerizada en local
+
+Se necesita Docker Desktop encendido y los puertos 80 y 443 libres.
+
+1. Crear el archivo de variables a partir del ejemplo. Nunca se sube a Git; ya está en `.gitignore`.
+
+   ```powershell
+   Copy-Item infra/.env.example infra/.env
+   ```
+
+2. Editar `infra/.env`:
+   - `IMAGE_TAG`: `sha-` más el commit completo de `main` que tenga imágenes publicadas (aparece en el job `publish-images` o en *Packages*).
+   - `TODO_DOMAIN`: dejar `localhost`.
+   - `DB_PASSWORD` y `JWT_SECRET`: valores aleatorios. Se pueden generar con `openssl rand -base64 32`.
+
+3. Iniciar sesión en GHCR, porque los paquetes del repositorio son privados. Se usa un token personal con el permiso `read:packages`:
+
+   ```powershell
+   docker login ghcr.io -u <usuario-github>
+   ```
+
+   Si no se quiere usar GHCR, se pueden construir las imágenes en local y poner `IMAGE_TAG=sha-local` en el `.env`:
+
+   ```powershell
+   docker build -t ghcr.io/nataliart12/dosw_lab7_tovar_solano_rodriguez-api:sha-local backend
+   docker build -t ghcr.io/nataliart12/dosw_lab7_tovar_solano_rodriguez-web:sha-local frontend
+   ```
+
+4. Levantar el stack desde la raíz del repositorio:
+
+   ```powershell
+   docker compose --env-file infra/.env -f infra/docker-compose.prod.yml up -d
+   docker compose --env-file infra/.env -f infra/docker-compose.prod.yml ps
+   ```
+
+5. Abrir `https://localhost`. Caddy firma el certificado de `localhost` con su propia autoridad, así que el navegador muestra una advertencia la primera vez. Para probar desde la terminal:
+
+   ```powershell
+   curl.exe -k https://localhost/health
+   curl.exe -k -i https://localhost/api/v1/tasks
+   ```
+
+   La primera petición debe responder `ok` y la segunda `401`.
+
+6. Detener el stack sin perder las tareas:
+
+   ```powershell
+   docker compose --env-file infra/.env -f infra/docker-compose.prod.yml down
+   ```
+
+   No se usa `down -v`, porque borra el volumen `todo_pgdata` con toda la base de datos.
+
+El stack tiene su propio PostgreSQL y no choca con el contenedor `todo-postgres` del desarrollo local, porque no publica el puerto 5432.
+
+### Ejecutar los despliegues y revisar los logs
+
+**Antes del primer despliegue** (lo hace quien tenga rol de administrador en el repositorio):
+
+- En *Settings → Environments*, `azure-lab` debe tener los secretos `AZURE_DB_PASSWORD` y `AZURE_JWT_SECRET` y la variable `AZURE_DOMAIN`. `aws-lab` debe tener `AWS_DB_PASSWORD`, `AWS_JWT_SECRET` y `AWS_DOMAIN`.
+- En *Settings → Actions → Runners* deben aparecer `azure-todo` y `aws-todo` en estado *Idle*. Si un runner sale *Offline*, la VM está apagada o el servicio del runner se cayó.
+- Debe existir en GHCR la imagen del último commit de `main`.
+
+**Lanzar un despliegue** (cualquier integrante con permiso de escritura):
+
+1. Ir a *Actions* y elegir **CD - Azure VM** o **CD - AWS Academy EC2**.
+2. Clic en **Run workflow**, rama `main`, y otra vez **Run workflow**.
+3. Abrir la ejecución. Primero corren los jobs de `quality-gate` en GitHub y después el de despliegue en el runner de la nube.
+4. Cuando termine en verde, abrir `https://<IP>.sslip.io`.
+
+**Logs en GitHub.** Cada paso del job se puede abrir desde la ejecución. Si el despliegue falla, el error suele estar en el paso *Preparar configuración y desplegar*. En ese paso, un `curl: (35)` al principio es normal: es Caddy sacando el certificado, y el job lo reintenta.
+
+**Logs en la VM.** Se entra por SSH y se usa el directorio de despliegue (`~/todo-azure` o `~/todo-aws`):
+
+```bash
+cd ~/todo-azure
+docker compose --env-file .env -f docker-compose.prod.yml ps
+docker compose --env-file .env -f docker-compose.prod.yml logs --tail=100 backend
+docker compose --env-file .env -f docker-compose.prod.yml logs --tail=50 proxy
+grep '^IMAGE_TAG=' .env
+```
+
+El último comando muestra qué versión está desplegada sin imprimir los secretos.
+
+**Logs del runner:**
+
+```bash
+cd ~/actions-runner
+sudo ./svc.sh status
+journalctl -u "actions.runner.*" --since "1 hour ago"
+```
+
+### Comparación Azure y AWS
+
+La arquitectura contempla ejecutar el mismo stack en Azure y AWS Academy mediante `infra/docker-compose.prod.yml`, que incluye PostgreSQL, API, frontend y Caddy. La propuesta utiliza las mismas imágenes de GHCR etiquetadas por SHA. La diferencia está en la máquina que alojaría el despliegue y en la configuración propia de cada entorno.
+
+La siguiente tabla describe la arquitectura planeada. No representa evidencia de que ambos despliegues se hayan ejecutado.
+
+| Aspecto | Azure | AWS Academy |
+|---|---|---|
+| Dónde se planea ejecutar Docker Compose | Máquina virtual de Azure | Instancia EC2 |
+| Runner de GitHub planeado | `azure-todo` | `aws-todo` |
+| Workflow previsto | `deploy-azure.yml` | `deploy-aws.yml` |
+| Environment previsto | `azure-lab` | `aws-lab` |
+| Secretos previstos | `AZURE_DB_PASSWORD`, `AZURE_JWT_SECRET` | `AWS_DB_PASSWORD`, `AWS_JWT_SECRET` |
+| Variable de dominio prevista | `AZURE_DOMAIN` | `AWS_DOMAIN` |
+| Carpeta de despliegue prevista | `~/todo-azure` | `~/todo-aws` |
+| Tamaño de máquina previsto | Standard_B2s (2 vCPU, 4 GiB) | t3.medium (2 vCPU, 4 GiB) |
+| Usuario SSH previsto | `azureuser` | `ubuntu` |
+| Almacenamiento de PostgreSQL previsto | Volumen Docker local a la VM | Volumen Docker local a la EC2 |
+
+**Qué se planea mantener igual:** el código, las dos imágenes (`-api` y `-web`) con su etiqueta SHA, el compose, el Caddyfile, los scripts SQL de `database/`, la verificación posterior al despliegue (`/health` con 200 y `/api/v1/tasks` sin token con 401) y las reglas de seguridad (solo 80 y 443 abiertos al público, nunca 5432 ni 8080).
+
+**Justificación de la arquitectura:**
+
+- **Máquinas virtuales con Docker Compose:** permiten entender el despliegue de punta a punta usando las mismas piezas en cualquier nube.
+- **Runners self-hosted:** permiten ejecutar el despliegue directamente en el servidor sin necesitar credenciales adicionales de la nube.
+- **Imágenes inmutables por SHA en GHCR:** permiten que ambas nubes utilicen la misma versión verificada por CI y facilitan volver a una versión anterior.
+- **Bases de datos independientes:** cada despliegue tendría su propio volumen y sus propios secretos.
+- **Caddy con HTTPS automático:** permite utilizar un dominio `IP.sslip.io` sin depender de un dominio propio.
+
+### Evidencias y video
+
+Las capturas están en [docs/ci-cd-evidencias](docs/ci-cd-evidencias).
+
+**Integración continua**
+
+| Archivo | Evidencia |
+| --- | --- |
+| [01-ci-pr-verde.png](docs/ci-cd-evidencias/01-ci-pr-verde.png) | Jobs de Java y React en verde en un pull request |
+| [02-ci-fallo-controlado.png](docs/ci-cd-evidencias/02-ci-fallo-controlado.png), [03-ci-fallo-log.png](docs/ci-cd-evidencias/03-ci-fallo-log.png) | Pipeline en rojo por una prueba que falla a propósito, y su log |
+| [04-ci-corregido.png](docs/ci-cd-evidencias/04-ci-corregido.png) | Pipeline otra vez en verde después de corregir |
+| [05-ci-main-publicacion.png](docs/ci-cd-evidencias/05-ci-main-publicacion.png) | Push a `main` con el job `publish-images` |
+| [06-ghcr-api.png](docs/ci-cd-evidencias/06-ghcr-api.png), [07-ghcr-web.png](docs/ci-cd-evidencias/07-ghcr-web.png) | Imágenes `-api` y `-web` en GHCR con etiqueta SHA |
+
+**Despliegue en Azure**
+
+| Archivo | Evidencia |
+| --- | --- |
+| [azure-01-runner-idle.png](docs/ci-cd-evidencias/azure-01-runner-idle.png) | Runner `azure-todo-vm` registrado y en estado *Idle* |
+| [mariana-azure-03-docker.png](docs/ci-cd-evidencias/mariana-azure-03-docker.png) | Docker y Docker Compose instalados en la VM |
+| [mariana-azure-02-deploy-verde.png](docs/ci-cd-evidencias/mariana-azure-02-deploy-verde.png) | Workflow `CD - Azure VM` en verde |
+| [mariana-azure-06-app-https.png](docs/ci-cd-evidencias/mariana-azure-06-app-https.png) | App por HTTPS con sesión iniciada |
+| [mariana-azure-07-compose-ps.png](docs/ci-cd-evidencias/mariana-azure-07-compose-ps.png) | Los cuatro contenedores en ejecución |
+| [mariana-azure-08-401.png](docs/ci-cd-evidencias/mariana-azure-08-401.png) | `/api/v1/tasks` sin JWT responde 401 |
+| [mariana-azure-09.png](docs/ci-cd-evidencias/mariana-azure-09.png) | La tarea sigue existiendo después de recrear backend y frontend |
+| [mariana-azure-10-rollback.png](docs/ci-cd-evidencias/mariana-azure-10-rollback.png) | Rollback a un SHA anterior sin recrear la base de datos |
+| [mariana-azure-11-rollback-datos.png](docs/ci-cd-evidencias/mariana-azure-11-rollback-datos.png) | La tarea sigue existiendo después del rollback |
+
+**Despliegue en AWS:** no hay evidencias porque el curso de AWS Academy venció antes de poder desplegar.
+
+**Video:** _pendiente._
+
 ## Tecnologías
 
 | Capa | Tecnología |
-| --- | --- |
+|---|---|
 | Front-end | React + Vite, Vitest, React Testing Library |
 | Back-end | Java 21, Spring Boot 4, Maven, Spring Data JPA, Bean Validation |
 | Seguridad | Spring Security, OAuth2 Resource Server (JWT con Nimbus, HS256), BCrypt |
@@ -686,9 +1019,9 @@ SecurityFilterChain (valida el JWT)
         │
         ▼
 REST Controller  →  Service  →  Repository  →  Entity JPA
-                                                    │
-                                                    ▼
-                                              PostgreSQL (Docker)
+                                                   │
+                                                   ▼
+                                             PostgreSQL (Docker)
 ```
 
 - **Seguridad:** `SecurityConfig` define las rutas públicas, el rol `ADMIN` y la validación del JWT; `TokenService` emite los tokens y `SecurityErrorHandler` responde 401/403 en JSON.
@@ -736,7 +1069,7 @@ El diagrama entidad-relación está en la sección [Diagramas de la solución](#
 **Usuario (`users`)**
 
 | Campo | Tipo | Obligatorio | Valor por defecto |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | `id` | Long | Sí | Generado |
 | `name` | String (máx. 100) | Sí | |
 | `email` | String (máx. 255, único, en minúsculas) | Sí | |
@@ -747,7 +1080,7 @@ El diagrama entidad-relación está en la sección [Diagramas de la solución](#
 **Tarea (`tasks`)**
 
 | Campo | Tipo | Obligatorio | Valor por defecto |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | `id` | Long | Sí | Generado |
 | `title` | String (máx. 120) | Sí | |
 | `description` | String (máx. 500) | No | |
@@ -803,7 +1136,7 @@ mvn spring-boot:run
 La API queda disponible en `http://localhost:8080`.
 
 | Variable | Obligatoria | Uso | Valor por defecto |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | `JWT_SECRET` | Sí | Llave HMAC para firmar y validar los JWT (mínimo 32 bytes) | Ninguno: sin ella la aplicación no arranca |
 | `DB_URL` | No | URL JDBC de PostgreSQL | `jdbc:postgresql://localhost:5432/todo_db` |
 | `DB_USER` | No | Usuario de la base de datos | `todo_user` |
@@ -847,6 +1180,7 @@ Ejemplo de error:
 ```
 { "status": 404, "message": "Task with id 99 was not found" }
 ```
+
 ## Requisito anterior · Categorías
 
 Las historias de usuario del requisito de categorías se encuentran en Jira: https://parcialdosw.atlassian.net/jira/software/projects/AE/boards/70/timeline?atlOrigin=eyJpIjoiODRkZmJhZTYxMjU3NDM0N2JhYTI3YmQwYzFjOWJkYTgiLCJwIjoiaiJ9
@@ -886,7 +1220,7 @@ Los comandos, la matriz PT-01 a PT-18 y la cobertura están en [Pruebas de segur
 Las capturas del laboratorio de seguridad están en [docs/evidence/security](docs/evidence/security).
 
 | Archivo | Evidencia |
-| --- | --- |
+|---|---|
 | `00-estado-inicial-crud.png`, `00-api-sin-token.png` | Estado inicial: CRUD sin autenticación |
 | `01-migracion-003.png` | Migración `003` aplicada sin perder tareas |
 | `02-react-login.png` | Pantalla de inicio de sesión |
@@ -903,7 +1237,7 @@ Las capturas del laboratorio de seguridad están en [docs/evidence/security](doc
 Las capturas del laboratorio anterior están en [docs/evidence](docs/evidence):
 
 | N.º | Evidencia |
-| --- | --- |
+|---|---|
 | 01 | PostgreSQL en Docker |
 | 02 | Tabla `tasks` |
 | 03 | Pruebas del Service |
@@ -927,4 +1261,4 @@ Los datos se conservan en el volumen `todo-postgres-data`. Para eliminar tambié
 ```
 docker rm -f todo-postgres
 docker volume rm todo-postgres-data
-```
+
