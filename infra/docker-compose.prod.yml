@@ -27,6 +27,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Falta JWT_SECRET}
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
       SPRING_JPA_SHOW_SQL: "false"
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
     depends_on:
       db:
         condition: service_healthy
